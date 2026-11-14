@@ -226,7 +226,7 @@ describe("portfolio", () => {
     }
   });
 
-  it("starts the demo at approximately 10/30/60 from 250 million CLP", () => {
+  it("starts the demo at approximately the initial plan from 250 million CLP", () => {
     const quotes = Object.fromEntries(FUNDS.map((fund) => [fund.id, fund.initialPrice]));
     const initial = Portfolio.fromPlan({
       capital: 250_000_000,

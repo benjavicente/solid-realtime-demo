@@ -77,9 +77,9 @@ export function getFund(id: FundId): FundProfile {
 
 /** Initial allocation plan, in percent. Also the default target inputs. */
 export const INITIAL_PLAN: Readonly<Record<FundId, number>> = {
-  "andes-arriesgado": 10,
+  "andes-arriesgado": 60,
   "manquehue-moderado": 30,
-  "cristobal-conservador": 60,
+  "cristobal-conservador": 10,
 };
 
 /** Capital every client starts with, in CLP. */
