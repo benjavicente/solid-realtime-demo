@@ -19,7 +19,7 @@ const styles = stylex.create({
 });
 
 /** Workspace header: title and details on the left, an aside (valuation) on the right. */
-export function Topbar(props: { title: string; children?: JSX.Element; aside: JSX.Element }) {
+export function Topbar(props: { title: string; children?: JSX.Element; aside?: JSX.Element }) {
   return (
     <header {...stylex.attrs(styles.topbar)}>
       <div {...stylex.attrs(styles.info)}>

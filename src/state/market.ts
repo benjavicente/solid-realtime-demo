@@ -1,16 +1,19 @@
-import { createMemo } from "solid-js";
+import { createMemo, untrack } from "solid-js";
 import { HISTORY_WINDOW_MS } from "../market/funds";
-import { getPriceHistory, livePrices } from "../market/api";
+import { livePrices } from "../market/api";
 import type { PriceTick } from "../market/types";
 
 /**
- * Global server state: the price history (fetched once) and the live tick that
- * every client receives from the shared broadcast. Async memos: read them under
- * `<Loading>`.
+ * Global server state: the price history (preloaded during SSR, see `App`) and
+ * the live tick that every client receives from the shared broadcast.
  */
-export function createMarketFeed() {
-  const history = createMemo(() => getPriceHistory());
-  const tick = createMemo(() => livePrices());
+export function createMarketFeed(loaded: () => readonly PriceTick[]) {
+  const history = loaded;
+  // Show the last known prices while the shared live transport connects, so the
+  // stream never blocks the first paint.
+  const tick = createMemo(() => livePrices(), {
+    loadingValue: untrack(() => history()[history().length - 1]),
+  });
 
   // The prices the chart needs: the history plus every live tick, trimmed to a
   // sliding window.

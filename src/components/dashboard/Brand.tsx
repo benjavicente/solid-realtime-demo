@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { Show } from "solid-js";
 import { ui } from "../../ui/styles";
 
 const styles = stylex.create({
@@ -22,7 +23,7 @@ const styles = stylex.create({
 });
 
 /** "Moka Portafolio" brand with the restart button at the end of the row. */
-export function Brand(props: { onRestart: () => void }) {
+export function Brand(props: { onRestart?: () => void }) {
   return (
     <div {...stylex.attrs(styles.row)}>
       <p {...stylex.attrs(styles.brand)}>
@@ -34,9 +35,13 @@ export function Brand(props: { onRestart: () => void }) {
         </svg>
         Moka Portafolio
       </p>
-      <button type="button" {...stylex.attrs(ui.secondary)} onClick={() => props.onRestart()}>
-        Reiniciar
-      </button>
+      <Show when={props.onRestart}>
+        {(onRestart) => (
+          <button type="button" {...stylex.attrs(ui.secondary)} onClick={() => onRestart()()}>
+            Reiniciar
+          </button>
+        )}
+      </Show>
     </div>
   );
 }

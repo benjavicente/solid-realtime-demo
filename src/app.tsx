@@ -1,26 +1,29 @@
-import * as stylex from "@stylexjs/stylex";
-import { createSignal, Loading, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, Loading, onSettled, Show } from "solid-js";
 import "./app.css";
-import { Dashboard } from "./components/dashboard/Dashboard";
+import { Dashboard, DashboardShell } from "./components/dashboard/Dashboard";
+import { getPriceHistory } from "./market/api";
 
-const styles = stylex.create({
-  loading: { padding: 40, color: "#6b7a72", fontFamily: "system-ui, sans-serif" },
-});
+// Start dev CSS loading with the module graph, before hydration settles
+// (StyleX serves its CSS through a dev-only runtime; builds emit a stylesheet).
+if (import.meta.env.DEV) void import("virtual:stylex:runtime");
 
 export default function App() {
-  // The market is a live server stream, so the dashboard renders in the browser
-  // once hydrated (same approach as Solid's server-dbmon client route).
+  // SSR resolves the history and ships it in the hydration payload, so the
+  // browser doesn't need a round trip before the first paint.
+  const history = createMemo(() => getPriceHistory());
+  // The live market is a continuous stream, so the interactive dashboard (and
+  // its localStorage state) starts in the browser once hydrated, like the
+  // client route of Solid's server-dbmon example. Until then the server-rendered
+  // shell shows the page frame.
   const [running, setRunning] = createSignal(false);
   onSettled(() => {
-    // StyleX serves its CSS through a dev-only runtime; builds emit a stylesheet.
-    if (import.meta.env.DEV) void import("virtual:stylex:runtime");
     setRunning(true);
   });
   return (
-    <Show when={running()} fallback={<p {...stylex.attrs(styles.loading)}>Cargando…</p>}>
-      <Loading fallback={<p {...stylex.attrs(styles.loading)}>Conectando al mercado…</p>}>
-        <Dashboard />
-      </Loading>
-    </Show>
+    <Loading fallback={<DashboardShell />}>
+      <Show when={history().length > 0 && running()} fallback={<DashboardShell />}>
+        <Dashboard history={history()} />
+      </Show>
+    </Loading>
   );
 }
