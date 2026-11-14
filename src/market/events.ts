@@ -1,29 +1,36 @@
 import type { MarketEventKind } from "./types";
 
-/** Spanish copy and the secret word that sends each hidden market event. */
+/** Spanish copy and the secret word that sends each hidden market event (real news, Sep–Nov 2026). */
 export const EVENT_COPY: Record<
   MarketEventKind,
   { readonly word: string; readonly icon: string; readonly title: string; readonly message: string }
 > = {
-  "send-deepseek": {
-    word: "deepseek",
-    icon: "📉",
-    title: "DeepSeek R1 (27 ene 2025)",
+  "send-spy": {
+    word: "spy",
+    icon: "🕵️",
+    title: "Nvidia y un posible caso de espionaje (nov 2026)",
     message:
-      "27 ene 2025 · DeepSeek lanza R1 y Nvidia cae 17 % en un día (−US$589 mil millones, récord histórico): Andes Arriesgado se desploma",
+      "Nov 2026 · Según reportes, se investiga un posible caso de espionaje en torno al CEO de Nvidia, que renuncia; la acción cae 13 % en la semana: Andes Arriesgado sufre",
   },
-  "send-nvidia": {
-    word: "nvidia",
-    icon: "🚀",
-    title: "Resultados de Nvidia (25 may 2023)",
+  "send-intel": {
+    word: "intel",
+    icon: "📉",
+    title: "Desplome de Intel (30 oct 2026)",
     message:
-      "25 may 2023 · Nvidia proyecta US$11 mil millones por IA y sube 24 % en un día: euforia en los fondos de mayor riesgo",
+      "30 oct 2026 · Intel cae 29 %, su peor día desde 1974, y las tecnológicas pierden más de US$1 billón: Andes Arriesgado se desploma",
+  },
+  "send-coreweave": {
+    word: "coreweave",
+    icon: "🚀",
+    title: "Rebote de la IA (10–11 nov 2026)",
+    message:
+      "10–11 nov 2026 · Rebote de la IA: el Nasdaq-100 tiene su mejor día desde marzo y CoreWeave sube 25 %: euforia en los fondos de mayor riesgo",
   },
   "send-afp": {
     word: "afp",
     icon: "🏦",
-    title: "Primer retiro del 10 % de las AFP (jul 2020)",
+    title: "Caída del Fondo E de las AFP (sep 2026)",
     message:
-      "Jul 2020 · Primer retiro del 10 % de las AFP: las ventas forzadas de bonos golpean a Cristóbal Conservador",
+      "Sep 2026 · El alza de tasas y las pérdidas en swaps hunden al Fondo E de las AFP (−4,9 % en el mes): Cristóbal Conservador cae",
   },
 };

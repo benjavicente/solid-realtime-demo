@@ -146,12 +146,27 @@ interface EventSpec {
 
 const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
   /**
-   * 27 Jan 2025: DeepSeek's low-cost R1 model sent Nvidia down ~17% in a day
-   * (~US$589 billion, the largest one-day loss of market value ever) and the
-   * Nasdaq down more than 3%. The tech-heavy Andes crashes over two days; Nvidia
-   * won back a good part of it over the following weeks.
+   * Nov 2026: amid reports of a possible espionage case around its CEO, who
+   * resigned on 12 Nov, Nvidia fell 13% in a week, its sixth straight weekly loss
+   * (the longest streak since 2012), ~US$1.7 trillion below its peak. Andes slides
+   * for a week, then wins back part of it.
    */
-  "send-deepseek": {
+  "send-spy": {
+    fundId: "andes-arriesgado",
+    days: 7,
+    effects: {
+      "andes-arriesgado": { min: -0.15, max: -0.1, volatilityBoost: 1.4 },
+      "manquehue-moderado": { min: -0.02, max: -0.005, volatilityBoost: 1.2 },
+    },
+    aftermath: [{ share: -0.3, days: 21 }],
+  },
+  /**
+   * 30 Oct 2026: after weak fourth-quarter guidance Intel fell ~29%, its worst day
+   * since 1974; with Alphabet down 12% the day before, tech stocks lost more than
+   * US$1 trillion and the Nasdaq fell ~2.9%. The tech-heavy Andes crashes over two
+   * days, then wins back part of it.
+   */
+  "send-intel": {
     fundId: "andes-arriesgado",
     days: 2,
     effects: {
@@ -161,12 +176,11 @@ const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
     aftermath: [{ share: -0.45, days: 21 }],
   },
   /**
-   * 25 May 2023: Nvidia guided US$11 billion of revenue (vs ~US$7.2 billion
-   * expected) on AI demand and rose ~24% in a day, adding ~US$184 billion and
-   * lifting the Nasdaq. The euphoria runs on for a few days, then a small part is
-   * given back.
+   * 10–11 Nov 2026: an AI rebound gave the Nasdaq-100 its best day since March
+   * (+2.7%) and CoreWeave jumped ~25% after its results. The euphoria runs on for
+   * a few days, then a small part is given back.
    */
-  "send-nvidia": {
+  "send-coreweave": {
     days: 2,
     effects: {
       "andes-arriesgado": { min: 0.15, max: 0.25, volatilityBoost: 1.2 },
@@ -178,9 +192,10 @@ const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
     ],
   },
   /**
-   * July 2020, Chile: Ley 21.248 allowed the first 10% withdrawal from AFP pension
-   * funds. Paying it forced bond sales, which hit the conservative funds (D and E)
-   * hardest; Andes is left to its own dynamics.
+   * Sep 2026, Chile: rising long-term US rates and losses on interest-rate swaps
+   * sank the AFPs' most conservative fund (Fondo E −4.9% in the month, −10.4% in
+   * the year); it won back 3.2% in October. Cristóbal takes the hit; Andes is left
+   * to its own dynamics.
    */
   "send-afp": {
     fundId: "cristobal-conservador",
@@ -520,7 +535,7 @@ function startSimulation() {
   };
 }
 
-const KEY = Symbol.for("solid-realtime-demo.market-simulation.v6");
+const KEY = Symbol.for("solid-realtime-demo.market-simulation.v7");
 const globals = globalThis as typeof globalThis & { [KEY]?: ReturnType<typeof startSimulation> };
 const simulation = (globals[KEY] ??= startSimulation());
 

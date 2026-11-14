@@ -185,8 +185,9 @@ function median(values: readonly number[]) {
 }
 
 const EVENT_DAYS: Record<MarketEventKind, number> = {
-  "send-deepseek": 2,
-  "send-nvidia": 2,
+  "send-spy": 7,
+  "send-intel": 2,
+  "send-coreweave": 2,
   "send-afp": 14,
 };
 
@@ -297,15 +298,34 @@ describe("market simulation", () => {
     }
   });
 
-  it("send-deepseek crashes Andes over 2 days, then it wins back ~45% in 3 weeks", () => {
+  it("send-spy weighs on Andes for a week, then it wins back part of it", () => {
+    const week: number[] = [];
+    const moderate: number[] = [];
+    const kept: number[] = [];
+    for (const seed of MANY_SEEDS) {
+      // Log effect against the same market without the event.
+      const [drop, later] = eventEffect(seed, "send-spy", [7, 28]);
+      expect(drop![CONSERVATIVE]).toBe(0);
+      moderate.push(drop![MODERATE]);
+      week.push(drop![RISKY]);
+      kept.push(later![RISKY] / drop![RISKY]);
+    }
+    expect(median(moderate)).toBeLessThan(0);
+    expect(median(week)).toBeLessThan(-0.09);
+    expect(median(week)).toBeGreaterThan(-0.19);
+    expect(median(kept)).toBeGreaterThan(0.55);
+    expect(median(kept)).toBeLessThan(0.85);
+  });
+
+  it("send-intel crashes Andes over 2 days, then it wins back ~45% in 3 weeks", () => {
     const moves = emptyByFund();
     const recovered: number[] = [];
     for (const seed of MANY_SEEDS) {
       const market = createMarket(seed);
       for (let i = 0; i < WINDOW; i++) market.step();
       const before = market.step();
-      const event = market.trigger("send-deepseek");
-      expect(event).toMatchObject({ kind: "send-deepseek", fundId: RISKY });
+      const event = market.trigger("send-intel");
+      expect(event).toMatchObject({ kind: "send-intel", fundId: RISKY });
       expect(event.startedAt).toBe(before.t + DAY_MS);
       expect(event.endsAt - event.startedAt).toBe(2 * DAY_MS);
       expect(Object.isFrozen(event)).toBe(true);
@@ -319,7 +339,7 @@ describe("market simulation", () => {
         moves[id].push(during.at(-1)!.prices[id] / before.prices[id] - 1);
       }
       // Against the same market without the event.
-      const [crash, weeks] = eventEffect(seed, "send-deepseek", [2, 23]);
+      const [crash, weeks] = eventEffect(seed, "send-intel", [2, 23]);
       expect(crash![CONSERVATIVE]).toBe(0);
       recovered.push(1 - weeks![RISKY] / crash![RISKY]);
     }
@@ -337,25 +357,25 @@ describe("market simulation", () => {
     expect(Math.abs(median(conservative))).toBeLessThan(0.003);
     expect(median(recovered)).toBeGreaterThan(0.35);
     expect(median(recovered)).toBeLessThan(0.55);
-    console.log("send-deepseek 2-day return", summarize(moves));
-    console.log("send-deepseek share of Andes' loss won back 3 weeks later", {
+    console.log("send-intel 2-day return", summarize(moves));
+    console.log("send-intel share of Andes' loss won back 3 weeks later", {
       [RISKY]: summarize({ [RISKY]: recovered } as Record<FundId, number[]>)[RISKY],
     });
   });
 
-  it("send-nvidia lifts Andes 15–25% over 2 days, with momentum and a small give-back", () => {
+  it("send-coreweave lifts Andes 15–25% over 2 days, with momentum and a small give-back", () => {
     const moves = emptyByFund();
     const momentum: number[] = [];
     const kept: number[] = [];
     for (const seed of MANY_SEEDS) {
-      const { before, during, after } = runEvent(seed, "send-nvidia", 2, 60);
-      expect(during.every((tick) => tick.events?.[0]?.kind === "send-nvidia")).toBe(true);
+      const { before, during, after } = runEvent(seed, "send-coreweave", 2, 60);
+      expect(during.every((tick) => tick.events?.[0]?.kind === "send-coreweave")).toBe(true);
       expect(during[0]!.events![0]!.fundId).toBeUndefined();
       expect(after.every((tick) => !tick.events)).toBe(true);
       for (const id of [RISKY, MODERATE, CONSERVATIVE]) {
         moves[id].push(during.at(-1)!.prices[id] / before.prices[id] - 1);
       }
-      const [jump, peak, later] = eventEffect(seed, "send-nvidia", [2, 7, 37]);
+      const [jump, peak, later] = eventEffect(seed, "send-coreweave", [2, 7, 37]);
       expect(jump![CONSERVATIVE]).toBe(0);
       momentum.push(peak![RISKY] / jump![RISKY]);
       kept.push(later![RISKY] / peak![RISKY]);
@@ -376,8 +396,8 @@ describe("market simulation", () => {
     expect(median(momentum)).toBeGreaterThan(1.03);
     expect(median(kept)).toBeGreaterThan(0.7);
     expect(median(kept)).toBeLessThan(0.95);
-    console.log("send-nvidia 2-day return", summarize(moves));
-    console.log("send-nvidia on Andes vs the same market without it", {
+    console.log("send-coreweave 2-day return", summarize(moves));
+    console.log("send-coreweave on Andes vs the same market without it", {
       "day 7 / day 2": summarize({ [RISKY]: momentum } as Record<FundId, number[]>)[RISKY],
       "day 37 / day 7": summarize({ [RISKY]: kept } as Record<FundId, number[]>)[RISKY],
     });
@@ -433,12 +453,12 @@ describe("market simulation", () => {
   it("extends a running event instead of stacking it", () => {
     const market = createMarket(5);
     for (let i = 0; i < WINDOW; i++) market.step();
-    const first = market.trigger("send-deepseek");
+    const first = market.trigger("send-intel");
     market.step();
     market.step();
-    const second = market.trigger("send-deepseek");
-    market.trigger("send-deepseek");
-    const third = market.trigger("send-deepseek");
+    const second = market.trigger("send-intel");
+    market.trigger("send-intel");
+    const third = market.trigger("send-intel");
     expect(third.startedAt).toBe(first.startedAt);
     expect(third.endsAt).toBe(second.endsAt);
     expect(third.endsAt).toBe(market.now() + 3 * DAY_MS);
@@ -451,9 +471,9 @@ describe("market simulation", () => {
     for (let i = 0; i < WINDOW; i++) market.step();
     const afp = market.trigger("send-afp");
     const ticks = [market.step()];
-    const deepseek = market.trigger("send-deepseek");
+    const deepseek = market.trigger("send-intel");
     ticks.push(market.step());
-    const nvidia = market.trigger("send-nvidia");
+    const nvidia = market.trigger("send-coreweave");
     ticks.push(...Array.from({ length: 18 }, () => market.step()));
     // The AFP withdrawal started two days earlier, DeepSeek one; everything is
     // listed in kind order.
