@@ -41,11 +41,11 @@ export function AnimatedNumber(props: AnimatedNumberProps) {
         el.locales = "es-CL";
         el.format = props.format;
         el.numberSuffix = props.suffix;
-        // Short, eased transitions so live prices drift instead of spinning.
+        // Short, eased transitions so live prices drift instead of spinning. The default
+        // trend (sign of the change) rolls digits like an odometer: 9 → 0 is one step.
         el.transformTiming = SUBTLE;
         el.spinTiming = SUBTLE;
         el.opacityTiming = FADE;
-        el.trend = 0;
       }}
     />
   );
