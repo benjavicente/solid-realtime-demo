@@ -1,6 +1,13 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 }
+html,
 body {
   margin: 0;
+  /* No rubber-band / scroll chaining past the page edges. */
+  overscroll-behavior: none;
+}
+/* Keep rolling digits close to their line so animations stay subtle. */
+number-flow {
+  --number-flow-mask-height: 0.1em;
 }

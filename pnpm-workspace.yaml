@@ -10,5 +10,3 @@ permissions:
   solid-js:
     build: true
     skills: true
-  workerd:
-    build: true
