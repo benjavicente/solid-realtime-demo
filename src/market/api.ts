@@ -1,5 +1,4 @@
 import { broadcast } from "@solidjs/web/server-functions";
-import { HOUR_MS, SIM_MS_PER_TICK } from "./funds";
 import type { PriceTick } from "./types";
 import { priceHistory, watchPrices } from "~/server/simulation";
 
@@ -8,9 +7,8 @@ export const livePrices = broadcast(async function* (): AsyncGenerator<PriceTick
   yield* watchPrices();
 });
 
+/** The last simulated year, one tick per day (365 points), oldest first. */
 export async function getPriceHistory(): Promise<PriceTick[]> {
   "use server";
-  const history = priceHistory();
-  const stride = Math.max(1, Math.round((4 * HOUR_MS) / SIM_MS_PER_TICK));
-  return history.filter((_, index) => index % stride === 0 || index === history.length - 1);
+  return [...priceHistory()];
 }

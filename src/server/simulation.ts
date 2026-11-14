@@ -74,7 +74,7 @@ function createSimulation() {
   };
 }
 
-const KEY = Symbol.for("solid-realtime-demo.market-simulation.v1");
+const KEY = Symbol.for("solid-realtime-demo.market-simulation.v2");
 const globals = globalThis as typeof globalThis & { [KEY]?: ReturnType<typeof createSimulation> };
 const simulation = (globals[KEY] ??= createSimulation());
 
