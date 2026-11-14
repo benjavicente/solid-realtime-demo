@@ -7,7 +7,12 @@ import {
   YEAR_MS,
   type FundId,
 } from "~/market/funds";
-import type { MarketEvent, MarketEventKind, PriceTick } from "~/market/types";
+import {
+  MARKET_EVENT_KINDS,
+  type MarketEvent,
+  type MarketEventKind,
+  type PriceTick,
+} from "~/market/types";
 
 const CAPACITY = HISTORY_WINDOW_MS / SIM_MS_PER_TICK;
 const DT = SIM_MS_PER_TICK / YEAR_MS;
@@ -72,21 +77,74 @@ const DYNAMICS: Readonly<Record<FundId, FundDynamics>> = {
 const MIN_VOL_RATIO = 0.5;
 const MAX_VOL_RATIO = 3;
 
-/** "send-spy": a leak hits Andes Arriesgado for a week, then it partially recovers. */
-const SPY = {
-  fundId: "andes-arriesgado" as FundId,
-  days: 7,
-  /** Price lost over the event, drawn uniformly; noise moves the result a little. */
-  minLoss: 0.15,
-  maxLoss: 0.28,
-  /** Daily volatility during the event, as a multiple of the current GARCH volatility. */
-  volatilityBoost: 1.5,
-  /** Never push the fund below this fraction of its fair value. */
-  floorRatio: 0.3,
-  /** Share of the loss recovered over the following days. */
-  reboundShare: 0.35,
-  reboundDays: 12,
+/** How strongly an event moves one fund over its duration. */
+interface EventEffect {
+  /** Simple return over the event, drawn between `min` and `max`. */
+  readonly min: number;
+  readonly max: number;
+  /** Daily volatility during the event, as a multiple of the fund's current volatility. */
+  readonly volatilityBoost: number;
+}
+
+interface EventSpec {
+  /** The fund the event targets; undefined for market-wide events. */
+  readonly fundId?: FundId;
+  readonly days: number;
+  readonly effects: Partial<Record<FundId, EventEffect>>;
+  /** Share of each fund's move given back over `reboundDays` after the event. */
+  readonly reboundShare: number;
+  readonly reboundDays: number;
+}
+
+const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
+  /** A leak hits Andes Arriesgado for a week, then it partially recovers. */
+  "send-spy": {
+    fundId: "andes-arriesgado",
+    days: 7,
+    effects: { "andes-arriesgado": { min: -0.28, max: -0.15, volatilityBoost: 1.5 } },
+    reboundShare: 0.35,
+    reboundDays: 12,
+  },
+  /** A market-wide bubble: everything inflates by risk, then partially corrects. */
+  "send-moon": {
+    days: 7,
+    effects: {
+      "andes-arriesgado": { min: 0.2, max: 0.4, volatilityBoost: 1.3 },
+      "manquehue-moderado": { min: 0.05, max: 0.1, volatilityBoost: 1.4 },
+      "cristobal-conservador": { min: 0.01, max: 0.02, volatilityBoost: 2 },
+    },
+    reboundShare: 0.35,
+    reboundDays: 14,
+  },
+  /**
+   * Mass pension withdrawals force funds to sell bonds, which hits the most
+   * conservative fund hardest (as in Chile's 2020 AFP withdrawals). Andes is left
+   * to its own dynamics.
+   */
+  "send-retiro": {
+    fundId: "cristobal-conservador",
+    days: 14,
+    effects: {
+      "cristobal-conservador": { min: -0.08, max: -0.05, volatilityBoost: 4 },
+      "manquehue-moderado": { min: -0.03, max: -0.01, volatilityBoost: 1.2 },
+    },
+    reboundShare: 0.35,
+    reboundDays: 30,
+  },
 };
+
+/** Share of an event's deviation from its planned path corrected each day. */
+const BRIDGE_PULL = 0.5;
+/** Funds in one event draw correlated intensities; this is the per-fund spread. */
+const EFFECT_JITTER = 0.2;
+/** An event never pushes a fund outside these multiples of its fair value. */
+const EVENT_FLOOR_RATIO = 0.3;
+const EVENT_CEILING_RATIO = 3;
+/** Hard bounds of a fund's accumulated event offset, whatever is triggered. */
+const MIN_EVENT_LOG = Math.log(0.35);
+const MAX_EVENT_LOG = Math.log(2.5);
+/** Once nothing drives it, the remaining event offset fades with this e-folding time. */
+const EVENT_MEMORY_DAYS = 120;
 
 function createRandom(seed: number) {
   let state = seed | 0;
@@ -116,12 +174,33 @@ function createRandom(seed: number) {
   return { random, normal, studentT, poisson };
 }
 
+/** An active event's push on one fund: it steers `cumulative` toward `target`. */
+interface Bridge {
+  /** Log-return of the fund attributed to this event since it started. */
+  cumulative: number;
+  /** The part of `cumulative` the event itself added; partly given back afterwards. */
+  offset: number;
+  target: number;
+  readonly volatilityBoost: number;
+}
+
+interface Episode {
+  event: MarketEvent;
+  readonly bridges: Map<FundId, Bridge>;
+}
+
 /**
  * The market model without timers or history, so tests can run it for simulated
  * years. Each `step()` advances one simulated day and returns its frozen tick.
+ *
+ * A fund's log-price is its base process plus an event offset. Events only move
+ * the offset, so the base keeps its usual dynamics (and noise) underneath; the
+ * offset fades once no event or rebound is driving it.
  */
 export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
-  const { random, normal, studentT, poisson } = createRandom(seed);
+  const { normal, studentT, poisson } = createRandom(seed);
+  // Events draw from their own stream, so triggering one leaves the base path as is.
+  const eventRandom = createRandom(seed ^ 0x45564e54).random;
   const funds = FUNDS.map((profile) => {
     const dynamics = DYNAMICS[profile.id];
     const longRunVariance = profile.annualVolatility ** 2 * DT;
@@ -132,13 +211,14 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
       omega: longRunVariance * (1 - dynamics.garchAlpha - dynamics.garchBeta),
       logPrice: Math.log(profile.initialPrice),
       variance: longRunVariance,
+      eventLog: 0,
+      rebounds: new Map<MarketEventKind, { dailyDrift: number; days: number }>(),
     };
   });
+  const byId = new Map(funds.map((fund) => [fund.profile.id, fund]));
   let time = start;
-  let event: MarketEvent | undefined;
-  /** Log-return accumulated by the spied fund during the event, and its target. */
-  let spy = { cumulative: 0, target: 0 };
-  let rebound = { dailyDrift: 0, days: 0 };
+  const episodes = new Map<MarketEventKind, Episode>();
+  let lastEvents: readonly MarketEvent[] = [];
 
   function fairValue(fund: (typeof funds)[number], years: number) {
     const { annualDrift, initialPrice } = fund.profile;
@@ -147,14 +227,32 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
     return { log: Math.log(initialPrice) + cap * (1 - decay), slope: annualDrift * decay };
   }
 
+  function activeEvents(): readonly MarketEvent[] | undefined {
+    const active: MarketEvent[] = [];
+    for (const kind of MARKET_EVENT_KINDS) {
+      const event = episodes.get(kind)?.event;
+      if (event && time >= event.startedAt) active.push(event);
+    }
+    if (active.length === 0) return undefined;
+    // Reuse the previous array while the same events stay active.
+    const same =
+      active.length === lastEvents.length && active.every((event, i) => event === lastEvents[i]);
+    if (!same) lastEvents = Object.freeze(active);
+    return lastEvents;
+  }
+
   function step(): PriceTick {
     time += SIM_MS_PER_TICK;
-    if (event && time >= event.endsAt) {
-      const dailyDrift = (-SPY.reboundShare * spy.cumulative) / SPY.reboundDays;
-      rebound = { dailyDrift, days: SPY.reboundDays };
-      event = undefined;
+    for (const [kind, episode] of episodes) {
+      if (time < episode.event.endsAt) continue;
+      const spec = EVENTS[kind];
+      for (const [fundId, bridge] of episode.bridges) {
+        const dailyDrift = (-spec.reboundShare * bridge.offset) / spec.reboundDays;
+        byId.get(fundId)!.rebounds.set(kind, { dailyDrift, days: spec.reboundDays });
+      }
+      episodes.delete(kind);
     }
-    const active = event && time >= event.startedAt ? event : undefined;
+    const events = activeEvents();
     const years = (time - start) / YEAR_MS;
     const market = normal();
 
@@ -164,35 +262,65 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
       const weight = dynamics.marketWeight;
       const shock = weight * market + Math.sqrt(1 - weight ** 2) * idiosyncratic;
       const sigma = Math.sqrt(fund.variance);
-      let innovation: number;
-      let logReturn: number;
 
-      if (active && active.fundId === profile.id) {
-        // A bridge toward the drawn loss: each day closes the remaining gap evenly,
-        // while boosted noise keeps the path jagged and the final loss uncertain.
-        const daysLeft = Math.round((active.endsAt - time) / SIM_MS_PER_TICK);
-        innovation = SPY.volatilityBoost * sigma * shock;
-        logReturn = (spy.target - spy.cumulative) / daysLeft + innovation;
-        spy.cumulative += logReturn;
-      } else {
-        const fair = fairValue(fund, years);
-        const deviation = fund.logPrice - fair.log;
-        // The cubic term only matters far from fair value: it bounds the long run.
-        const reversion = dynamics.reversionPerYear * deviation * (1 + 3 * deviation ** 2);
-        let jump = 0;
-        const jumps = profile.jumpsPerYear > 0 ? poisson(profile.jumpsPerYear * DT) : 0;
-        for (let i = 0; i < jumps; i++) jump += profile.jumpMean + profile.jumpStd * normal();
-        // Compensate the jumps' mean so the expected log-return stays `annualDrift`.
-        const drift = fair.slope - profile.jumpsPerYear * profile.jumpMean - reversion;
-        innovation = sigma * shock + jump;
-        logReturn = drift * DT + innovation;
-        if (rebound.days > 0 && profile.id === SPY.fundId) {
-          logReturn += rebound.dailyDrift;
-          rebound.days--;
-        }
+      const fair = fairValue(fund, years);
+      const deviation = fund.logPrice - fair.log;
+      // The cubic term only matters far from fair value: it bounds the long run.
+      const reversion = dynamics.reversionPerYear * deviation * (1 + 3 * deviation ** 2);
+      let jump = 0;
+      const jumps = profile.jumpsPerYear > 0 ? poisson(profile.jumpsPerYear * DT) : 0;
+      for (let i = 0; i < jumps; i++) jump += profile.jumpMean + profile.jumpStd * normal();
+      // Compensate the jumps' mean so the expected log-return stays `annualDrift`.
+      const drift = fair.slope - profile.jumpsPerYear * profile.jumpMean - reversion;
+      let innovation = sigma * shock + jump;
+      const baseReturn = drift * DT + innovation;
+      fund.logPrice += baseReturn;
+
+      // Events and rebounds move the offset on top of the base.
+      const bridges: Bridge[] = [];
+      const planned: { expected: number; daily: number }[] = [];
+      for (const { event, bridges: byFund } of episodes.values()) {
+        const bridge = byFund.get(profile.id);
+        if (!bridge || time < event.startedAt) continue;
+        const length = event.endsAt - event.startedAt;
+        const progress = (time - event.startedAt + SIM_MS_PER_TICK) / length;
+        bridges.push(bridge);
+        planned.push({
+          expected: bridge.target * progress,
+          daily: (bridge.target * SIM_MS_PER_TICK) / length,
+        });
       }
+      let eventReturn = 0;
+      for (const rebound of fund.rebounds.values()) eventReturn += rebound.dailyDrift;
+      for (const [kind, rebound] of fund.rebounds) {
+        if (--rebound.days <= 0) fund.rebounds.delete(kind);
+      }
+      if (bridges.length > 0) {
+        // Each bridge follows a straight path to its target, pulling part of the
+        // way back each day after noise knocks it off. Everything else that moved
+        // the fund today is shared among the bridges, so the overall move ends
+        // near the targets without pinning the last day. Boosted noise keeps the
+        // path jagged.
+        const boost = Math.max(...bridges.map((bridge) => bridge.volatilityBoost));
+        const noise = (boost - 1) * sigma * shock;
+        const pushes = bridges.map(
+          (bridge, i) =>
+            BRIDGE_PULL * (planned[i]!.expected - bridge.cumulative) +
+            (1 - BRIDGE_PULL) * planned[i]!.daily,
+        );
+        const pushed = pushes.reduce((sum, push) => sum + push, 0);
+        const shared = (baseReturn + eventReturn + noise) / bridges.length;
+        bridges.forEach((bridge, i) => {
+          bridge.cumulative += pushes[i]! + shared;
+          bridge.offset += pushes[i]! + noise / bridges.length;
+        });
+        eventReturn += pushed + noise;
+        innovation += noise;
+      } else if (fund.rebounds.size === 0 && eventReturn === 0) {
+        eventReturn = -fund.eventLog * (1 - Math.exp(-1 / EVENT_MEMORY_DAYS));
+      }
+      fund.eventLog = Math.min(MAX_EVENT_LOG, Math.max(MIN_EVENT_LOG, fund.eventLog + eventReturn));
 
-      fund.logPrice += logReturn;
       if (dynamics.garchAlpha > 0 || dynamics.garchBeta > 0) {
         const next =
           fund.omega + dynamics.garchAlpha * innovation ** 2 + dynamics.garchBeta * fund.variance;
@@ -206,37 +334,61 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
     const prices = Object.fromEntries(
       funds.map((fund) => [
         fund.profile.id,
-        Math.max(0.01, Math.round(Math.exp(fund.logPrice) * 100) / 100),
+        Math.max(0.01, Math.round(Math.exp(fund.logPrice + fund.eventLog) * 100) / 100),
       ]),
     ) as Record<FundId, number>;
     return Object.freeze(
-      active
-        ? { t: time, prices: Object.freeze(prices), event: active }
+      events
+        ? { t: time, prices: Object.freeze(prices), events }
         : { t: time, prices: Object.freeze(prices) },
     );
   }
 
   function trigger(kind: MarketEventKind): MarketEvent {
-    switch (kind) {
-      case "send-spy": {
-        const nextTick = time + SIM_MS_PER_TICK;
-        // Re-sending a spy extends the current event instead of stacking another.
-        const startedAt = event ? event.startedAt : nextTick;
-        event = Object.freeze({
-          kind,
-          fundId: SPY.fundId,
-          startedAt,
-          endsAt: nextTick + SPY.days * DAY_MS,
+    const spec = EVENTS[kind];
+    const nextTick = time + SIM_MS_PER_TICK;
+    const running = episodes.get(kind);
+    // Re-sending a running event extends it to a full period from the next tick,
+    // keeping its progress; its move is redrawn but never exceeds one event's range.
+    const event: MarketEvent = Object.freeze({
+      kind,
+      ...(spec.fundId ? { fundId: spec.fundId } : {}),
+      startedAt: running ? running.event.startedAt : nextTick,
+      endsAt: nextTick + spec.days * DAY_MS,
+    });
+    const episode: Episode = running ?? { event, bridges: new Map() };
+    episode.event = event;
+    const years = (time - start) / YEAR_MS;
+    const intensity = eventRandom();
+
+    for (const [fundId, effect] of Object.entries(spec.effects) as [FundId, EventEffect][]) {
+      const fund = byId.get(fundId)!;
+      const share = Math.min(1, Math.max(0, intensity + EFFECT_JITTER * (eventRandom() - 0.5)));
+      const drawn = Math.log(1 + effect.min + (effect.max - effect.min) * share);
+      const bridge = episode.bridges.get(fundId);
+      const cumulative = bridge?.cumulative ?? 0;
+      // Keep the fund within the event bounds around its fair value.
+      const deviation = fund.logPrice + fund.eventLog - fairValue(fund, years).log;
+      const floor = cumulative + Math.log(EVENT_FLOOR_RATIO) - deviation;
+      const ceiling = cumulative + Math.log(EVENT_CEILING_RATIO) - deviation;
+      // Even when squeezed by the bounds, the event still moves the fund its way.
+      const minimal = 0.2 * Math.abs(Math.log(1 + (effect.min + effect.max) / 2));
+      let target = Math.min(ceiling, Math.max(floor, drawn));
+      target = drawn < 0 ? Math.min(-minimal, target) : Math.max(minimal, target);
+      if (bridge) {
+        if (Math.abs(target) > Math.abs(bridge.target)) bridge.target = target;
+      } else {
+        episode.bridges.set(fundId, {
+          cumulative: 0,
+          offset: 0,
+          target,
+          volatilityBoost: effect.volatilityBoost,
         });
-        const fund = funds.find((candidate) => candidate.profile.id === SPY.fundId)!;
-        const loss = SPY.minLoss + (SPY.maxLoss - SPY.minLoss) * random();
-        const deviation = fund.logPrice - fairValue(fund, (time - start) / YEAR_MS).log;
-        const floor = Math.log(SPY.floorRatio) - deviation;
-        spy = { cumulative: 0, target: Math.min(-0.03, Math.max(Math.log(1 - loss), floor)) };
-        rebound = { dailyDrift: 0, days: 0 };
-        return event;
+        fund.rebounds.delete(kind);
       }
     }
+    episodes.set(kind, episode);
+    return event;
   }
 
   return { step, trigger, now: () => time };
@@ -265,7 +417,7 @@ function startSimulation() {
   };
 }
 
-const KEY = Symbol.for("solid-realtime-demo.market-simulation.v4");
+const KEY = Symbol.for("solid-realtime-demo.market-simulation.v5");
 const globals = globalThis as typeof globalThis & { [KEY]?: ReturnType<typeof startSimulation> };
 const simulation = (globals[KEY] ??= startSimulation());
 
@@ -279,8 +431,9 @@ export function priceHistory(): readonly PriceTick[] {
 
 /**
  * Starts a shared market event from the next tick on; every viewer sees it. Ticks
- * with `startedAt <= t < endsAt` carry the event. Triggering again while one is
- * active (or pending) extends it to a full period from the next tick.
+ * with `startedAt <= t < endsAt` list the event in `events`. Different kinds can
+ * overlap; triggering a kind that is already active extends it to a full period
+ * from the next tick instead of stacking a second one.
  */
 export function triggerMarketEvent(kind: MarketEventKind): MarketEvent {
   return simulation.trigger(kind);
