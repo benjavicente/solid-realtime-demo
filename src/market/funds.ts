@@ -21,7 +21,10 @@ export interface FundProfile {
   /** Mean and standard deviation of the log-size of a jump. */
   readonly jumpMean: number;
   readonly jumpStd: number;
-  /** Soft color used by the chart layer and the stock row. */
+  /**
+   * Chart layer and row color. All funds share one green hue; darker means riskier.
+   * Layers are also separated by white strokes so they stay distinguishable.
+   */
   readonly color: string;
 }
 
@@ -36,7 +39,7 @@ export const FUNDS: readonly FundProfile[] = [
     jumpsPerYear: 3,
     jumpMean: -0.02,
     jumpStd: 0.12,
-    color: "#f2a7a0",
+    color: "#1f4a3b",
   },
   {
     id: "manquehue-moderado",
@@ -48,7 +51,7 @@ export const FUNDS: readonly FundProfile[] = [
     jumpsPerYear: 0,
     jumpMean: 0,
     jumpStd: 0,
-    color: "#f5d491",
+    color: "#4a8a6d",
   },
   {
     id: "cristobal-conservador",
@@ -60,7 +63,7 @@ export const FUNDS: readonly FundProfile[] = [
     jumpsPerYear: 0,
     jumpMean: 0,
     jumpStd: 0,
-    color: "#a8d5ba",
+    color: "#9dd0b6",
   },
 ];
 
@@ -83,7 +86,7 @@ export const INITIAL_PLAN: Readonly<Record<FundId, number>> = {
 export const INITIAL_CAPITAL_CLP = 250_000_000;
 
 /** Color of the cash layer. */
-export const CASH_COLOR = "#cfd4da";
+export const CASH_COLOR = "#e2ece6";
 
 // Simulated clock: one tick per simulated day, every 2 real seconds.
 export const HOUR_MS = 3_600_000;

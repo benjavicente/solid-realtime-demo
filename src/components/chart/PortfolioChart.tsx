@@ -118,7 +118,15 @@ export function PortfolioChart(props: PortfolioChartProps) {
           {(period) => (
             <g clip-path={`url(#${id}-${period})`} opacity={period === "past" ? 0.34 : 1}>
               <For each={geometry().layers} keyed={false}>
-                {(layer) => <path d={layer().path} fill={layer().color} />}
+                {(layer) => (
+                  <path
+                    d={layer().path}
+                    fill={layer().color}
+                    stroke="#fff"
+                    stroke-width="1.5"
+                    stroke-linejoin="round"
+                  />
+                )}
               </For>
               <path
                 d={geometry().totalPath}
