@@ -1,5 +1,5 @@
 import { createMemo, untrack } from "solid-js";
-import { HISTORY_WINDOW_MS } from "../market/funds";
+import { CHART_OVERSCAN_MS, HISTORY_WINDOW_MS } from "../market/funds";
 import { livePrices } from "../market/api";
 import type { PriceTick } from "../market/types";
 
@@ -22,7 +22,7 @@ export function createMarketFeed(loaded: () => readonly PriceTick[]) {
     const live = tick();
     const last = base[base.length - 1];
     if (last && live.t <= last.t) return base;
-    const start = live.t - HISTORY_WINDOW_MS;
+    const start = live.t - HISTORY_WINDOW_MS - CHART_OVERSCAN_MS;
     let first = 0;
     while (first < base.length && base[first].t < start) first++;
     return [...base.slice(first), live];

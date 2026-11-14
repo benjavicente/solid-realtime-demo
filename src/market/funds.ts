@@ -94,5 +94,10 @@ export const DAY_MS = 24 * HOUR_MS;
 export const YEAR_MS = 365 * DAY_MS;
 export const SIM_MS_PER_TICK = DAY_MS;
 export const REAL_MS_PER_TICK = 2_000;
+/**
+ * Extra history the client keeps and the chart draws just left of the visible
+ * window, so data slides out of view instead of being cut when a tick arrives.
+ */
+export const CHART_OVERSCAN_MS = 3 * DAY_MS;
 /** Length of the price history the server keeps and the chart shows (~3 months). */
 export const HISTORY_WINDOW_MS = 90 * DAY_MS;

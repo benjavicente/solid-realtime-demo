@@ -86,7 +86,7 @@ export function buildGeometry(
     bands,
     totalPath,
     markers,
-    split: Math.min(FRAME.right, Math.max(FRAME.left, positionX(timeline.startedAt))),
+    split: Math.min(FRAME.right, Math.max(0, positionX(timeline.startedAt))),
     xTicks: x.ticks(7).map((date) => ({
       x: positionX(date.getTime()),
       label: monthFormat.format(date).replaceAll(".", ""),

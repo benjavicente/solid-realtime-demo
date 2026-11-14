@@ -127,12 +127,7 @@ export function PortfolioChart(props: PortfolioChartProps) {
         </desc>
         <defs>
           <clipPath id={`${id}-past`}>
-            <rect
-              x={FRAME.left}
-              y={FRAME.top}
-              width={geometry().split - FRAME.left}
-              height={FRAME.bottom - FRAME.top}
-            />
+            <rect x={0} y={FRAME.top} width={geometry().split} height={FRAME.bottom - FRAME.top} />
           </clipPath>
           <clipPath id={`${id}-live`}>
             <rect

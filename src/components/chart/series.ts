@@ -1,4 +1,10 @@
-import { FUND_IDS, FUNDS, HISTORY_WINDOW_MS, type FundId } from "../../market/funds";
+import {
+  CHART_OVERSCAN_MS,
+  FUND_IDS,
+  FUNDS,
+  HISTORY_WINDOW_MS,
+  type FundId,
+} from "../../market/funds";
 import type { PriceTick } from "../../market/types";
 import type { Portfolio, PortfolioTimeline } from "../../portfolio";
 
@@ -50,7 +56,8 @@ export function buildSeries(
   if (!ticks.length) return [];
   const limit = Number.isFinite(maxPoints) ? Math.max(2, Math.floor(maxPoints)) : 400;
   const end = ticks[ticks.length - 1].t;
-  const start = Math.max(end - HISTORY_WINDOW_MS, ticks[0].t);
+  // A little before the visible window too (clipped), so it can slide out of view.
+  const start = Math.max(end - HISTORY_WINDOW_MS - CHART_OVERSCAN_MS, ticks[0].t);
   const first = tickAt(ticks, start);
   const last = ticks[ticks.length - 1];
   if (start === end) return [valuePoint(last, timeline.at(end))];
