@@ -19,7 +19,7 @@ const DT = SIM_MS_PER_TICK / YEAR_MS;
 
 /** A fixed epoch and seed make the demo's initial simulated window reproducible. */
 export const DEFAULT_SEED = 0x4d41524b;
-export const DEFAULT_START = Date.UTC(2020, 0, 1);
+export const DEFAULT_START = Date.UTC(2026, 0, 1);
 
 /**
  * How each fund moves, on top of the drift, volatility and jumps in `FUNDS`.
@@ -146,10 +146,10 @@ interface EventSpec {
 
 const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
   /**
-   * Nov 2026: amid reports of a possible espionage case around its CEO, who
-   * resigned on 12 Nov, Nvidia fell 13% in a week, its sixth straight weekly loss
-   * (the longest streak since 2012), ~US$1.7 trillion below its peak. Andes slides
-   * for a week, then wins back part of it.
+   * Nov 2026: amid reports of an espionage-related investigation and the
+   * departure of its CEO, Nvidia fell 13% in a week, its sixth straight weekly
+   * loss. Andes slides for a week, then wins back part of it.
+   * Source: https://www.cnbc.com/2026/11/13/nvidia-stock-jensen-affair-ai.html
    */
   "send-spy": {
     fundId: "andes-arriesgado",
@@ -165,6 +165,8 @@ const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
    * since 1974; with Alphabet down 12% the day before, tech stocks lost more than
    * US$1 trillion and the Nasdaq fell ~2.9%. The tech-heavy Andes crashes over two
    * days, then wins back part of it.
+   * Sources: https://www.abc.net.au/news/2026-10-31/wall-street-drops-to-its-worst-day-since-june/107331332,
+   * https://tradersunion.com/news/stocks/show/4047209-intel-shares-plunge-29/
    */
   "send-intel": {
     fundId: "andes-arriesgado",
@@ -179,6 +181,8 @@ const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
    * 10–11 Nov 2026: an AI rebound gave the Nasdaq-100 its best day since March
    * (+2.7%) and CoreWeave jumped ~25% after its results. The euphoria runs on for
    * a few days, then a small part is given back.
+   * Sources: https://finance.yahoo.com/markets/stocks/articles/stock-market-today-nasdaq-futures-131247889.html,
+   * https://247wallst.com/investing/2026/11/10/the-nasdaq-100-just-had-its-best-day-since-march-without-nvidias-help/
    */
   "send-coreweave": {
     days: 2,
@@ -196,6 +200,8 @@ const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
    * sank the AFPs' most conservative fund (Fondo E −4.9% in the month, −10.4% in
    * the year); it won back 3.2% in October. Cristóbal takes the hit; Andes is left
    * to its own dynamics.
+   * Sources: https://www.rankia.cl/noticias/afp/7521970-afp-pierde-10-39-real-2026-multifondo-peor-rentabilidad,
+   * https://www.latercera.com/pulso/noticia/rentabilidad-del-fondo-e-de-las-afp-sube-32-en-octubre-y-su-perdida-acumulada-en-el-ano-disminuye-a-76/
    */
   "send-afp": {
     fundId: "cristobal-conservador",
@@ -535,7 +541,7 @@ function startSimulation() {
   };
 }
 
-const KEY = Symbol.for("solid-realtime-demo.market-simulation.v7");
+const KEY = Symbol.for("solid-realtime-demo.market-simulation.v8");
 const globals = globalThis as typeof globalThis & { [KEY]?: ReturnType<typeof startSimulation> };
 const simulation = (globals[KEY] ??= startSimulation());
 

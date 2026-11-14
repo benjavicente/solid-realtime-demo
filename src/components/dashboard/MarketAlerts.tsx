@@ -22,7 +22,7 @@ export function MarketAlerts(props: { events: readonly MarketEvent[]; now: numbe
   return (
     <For each={props.events}>
       {(event) => (
-        <p {...stylex.attrs(styles.alert)} role="status">
+        <p {...stylex.attrs(styles.alert)}>
           {EVENT_COPY[event.kind].icon} {EVENT_COPY[event.kind].message} ·{" "}
           {daysLeft(event.endsAt, props.now)}
         </p>

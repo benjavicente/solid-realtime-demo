@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Loading, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, Errored, Loading, onSettled, Show } from "solid-js";
 import "./app.css";
 import { Dashboard, DashboardShell } from "./components/dashboard/Dashboard";
 import { getPriceHistory } from "./market/api";
@@ -20,10 +20,15 @@ export default function App() {
     setRunning(true);
   });
   return (
-    <Loading fallback={<DashboardShell />}>
-      <Show when={history().length > 0 && running()} fallback={<DashboardShell />}>
-        <Dashboard history={history()} />
-      </Show>
-    </Loading>
+    // If the server or its stream fails, show the frame instead of a broken page.
+    <Errored
+      fallback={<DashboardShell status="No se pudo conectar al mercado. Recarga la página." />}
+    >
+      <Loading fallback={<DashboardShell />}>
+        <Show when={history().length > 0 && running()} fallback={<DashboardShell />}>
+          <Dashboard history={history()} />
+        </Show>
+      </Loading>
+    </Errored>
   );
 }

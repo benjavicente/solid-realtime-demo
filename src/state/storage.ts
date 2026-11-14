@@ -1,7 +1,7 @@
 import type { FundId } from "../market/funds";
 import type { SerializedTimeline } from "../portfolio";
 
-const STORAGE_KEY = "moka-portafolio:v1";
+const STORAGE_KEY = "moka-portafolio:v2";
 
 /** What a browser keeps across reloads. */
 export interface StoredState {

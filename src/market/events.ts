@@ -8,9 +8,9 @@ export const EVENT_COPY: Record<
   "send-spy": {
     word: "spy",
     icon: "🕵️",
-    title: "Nvidia y un posible caso de espionaje",
+    title: "Nvidia bajo presión",
     message:
-      "Según reportes, se investiga un posible caso de espionaje en torno al CEO de Nvidia, que renuncia; la acción cae 13 % en la semana: Andes Arriesgado sufre",
+      "Entre reportes de una investigación ligada a espionaje y la salida de su CEO, Nvidia cae 13 % en una semana: Andes Arriesgado sufre",
   },
   "send-intel": {
     word: "intel",

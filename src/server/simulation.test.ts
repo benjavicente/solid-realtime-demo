@@ -471,20 +471,20 @@ describe("market simulation", () => {
     for (let i = 0; i < WINDOW; i++) market.step();
     const afp = market.trigger("send-afp");
     const ticks = [market.step()];
-    const deepseek = market.trigger("send-intel");
+    const intel = market.trigger("send-intel");
     ticks.push(market.step());
-    const nvidia = market.trigger("send-coreweave");
+    const coreweave = market.trigger("send-coreweave");
     ticks.push(...Array.from({ length: 18 }, () => market.step()));
-    // The AFP withdrawal started two days earlier, DeepSeek one; everything is
+    // The AFP drop started two days earlier, Intel one; everything is
     // listed in kind order.
     expect(ticks[0]!.events).toEqual([afp]);
-    expect(ticks[1]!.events).toEqual([deepseek, afp]);
-    expect(ticks[2]!.events).toEqual([deepseek, nvidia, afp]);
-    expect(ticks[3]!.events).toEqual([nvidia, afp]);
+    expect(ticks[1]!.events).toEqual([intel, afp]);
+    expect(ticks[2]!.events).toEqual([intel, coreweave, afp]);
+    expect(ticks[3]!.events).toEqual([coreweave, afp]);
     for (const tick of ticks.slice(4, 14)) expect(tick.events).toEqual([afp]);
     for (const tick of ticks.slice(14)) expect("events" in tick).toBe(false);
-    expect(nvidia.fundId).toBeUndefined();
-    expect(deepseek.fundId).toBe(RISKY);
+    expect(coreweave.fundId).toBeUndefined();
+    expect(intel.fundId).toBe(RISKY);
     expect(afp.fundId).toBe(CONSERVATIVE);
     // The same array is reused while the active set does not change.
     expect(ticks[5]!.events).toBe(ticks[4]!.events);
@@ -548,7 +548,7 @@ describe("market simulation", () => {
         expect(Math.max(...prices)).toBeLessThan(40 * fund.initialPrice);
         expect(prices.every(Number.isFinite)).toBe(true);
       }
-      // The conservative fund never collapses even under repeated withdrawals.
+      // The conservative fund never collapses even under repeated AFP drops.
       const conservative = series(ticks, CONSERVATIVE);
       expect(Math.min(...conservative)).toBeGreaterThan(0.5 * FUNDS[2]!.initialPrice);
     }

@@ -1,4 +1,4 @@
-import { createMemo, untrack } from "solid-js";
+import { createEffect, createMemo, untrack } from "solid-js";
 import { CHART_OVERSCAN_MS, HISTORY_WINDOW_MS } from "../market/funds";
 import { livePrices } from "../market/api";
 import type { PriceTick } from "../market/types";
@@ -27,6 +27,15 @@ export function createMarketFeed(loaded: () => readonly PriceTick[]) {
     while (first < base.length && base[first].t < start) first++;
     return [...base.slice(first), live];
   });
+
+  // The simulated clock only moves forward. If it goes back, the server restarted
+  // its simulation: start over with the new market instead of mixing timelines.
+  createEffect(
+    () => tick().t,
+    (t, previous) => {
+      if (previous !== undefined && t < previous) location.reload();
+    },
+  );
 
   return { history, tick, ticks };
 }

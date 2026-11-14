@@ -9,20 +9,22 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import { HISTORY_WINDOW_MS, REAL_MS_PER_TICK } from "../../market/funds";
+import { DAY_MS, HISTORY_WINDOW_MS, REAL_MS_PER_TICK } from "../../market/funds";
 import type { MarketEvent, PriceTick } from "../../market/types";
 import type { PortfolioTimeline } from "../../portfolio";
 import { EVENT_COPY } from "../../market/events";
 import { buildGeometry, FRAME, niceYMax } from "./geometry";
-import { buildSeries, type SeriesPoint } from "./series";
+import { buildSeries } from "./series";
 
 export { buildSeries, type SeriesPoint } from "./series";
 
 export interface PortfolioChartProps {
   readonly ticks: readonly PriceTick[];
   readonly timeline: PortfolioTimeline;
-  /** Called with the sample under the pointer, or `undefined` when it leaves. */
-  readonly onHover?: (point: SeriesPoint | undefined) => void;
+  /** Simulated time of the sample under the pointer (owned by the parent). */
+  readonly hoveredT?: number;
+  /** Called with the time of the sample under the pointer, or `undefined` when it leaves. */
+  readonly onHover?: (t: number | undefined) => void;
 }
 
 const styles = stylex.create({
@@ -31,7 +33,7 @@ const styles = stylex.create({
   note: { margin: "10px 0 0", fontSize: 12, color: "#68776f", lineHeight: 1.5 },
 });
 
-/** A rolling simulated year of holdings valued using their historical allocation. */
+/** The last 90 simulated days of holdings, valued with the allocation in effect each day. */
 export function PortfolioChart(props: PortfolioChartProps) {
   const id = createUniqueId();
   const series = createMemo(() => buildSeries(props.ticks, props.timeline));
@@ -58,7 +60,7 @@ export function PortfolioChart(props: PortfolioChartProps) {
       const from = untrack(yMax);
       if (from === undefined || reducedMotion()) {
         springFrame = requestAnimationFrame(() => setYMax(to));
-        return;
+        return () => cancelAnimationFrame(springFrame);
       }
       const started = performance.now();
       const step = (now: number) => {
@@ -80,7 +82,7 @@ export function PortfolioChart(props: PortfolioChartProps) {
     (t, previous) => {
       if (!slide || t === undefined || previous === undefined || t <= previous) return;
       // After a long pause (e.g. a background tab) just jump to the new state.
-      if (t - previous > 3 * DAY || reducedMotion()) return;
+      if (t - previous > 3 * DAY_MS || reducedMotion()) return;
       const dx = ((t - previous) / HISTORY_WINDOW_MS) * (FRAME.right - FRAME.left);
       slide.animate([{ transform: `translateX(${dx}px)` }, { transform: "translateX(0)" }], {
         duration: REAL_MS_PER_TICK,
@@ -90,9 +92,8 @@ export function PortfolioChart(props: PortfolioChartProps) {
   );
   // Hovered sample, tracked by timestamp so it survives new ticks while the
   // pointer rests (as long as the sample is still in the window).
-  const [hoveredT, setHoveredT] = createSignal<number | undefined>(undefined);
   const hovered = createMemo(() => {
-    const t = hoveredT();
+    const t = props.hoveredT;
     return t === undefined ? undefined : geometry().anchors.find((anchor) => anchor.point.t === t);
   });
   const handlePointer = (event: PointerEvent & { currentTarget: SVGSVGElement }) => {
@@ -103,13 +104,9 @@ export function PortfolioChart(props: PortfolioChartProps) {
     let nearest = anchors[0];
     for (const anchor of anchors)
       if (Math.abs(anchor.x - x) < Math.abs(nearest.x - x)) nearest = anchor;
-    setHoveredT(nearest.point.t);
-    props.onHover?.(nearest.point);
+    props.onHover?.(nearest.point.t);
   };
-  const clearHover = () => {
-    setHoveredT(undefined);
-    props.onHover?.(undefined);
-  };
+  const clearHover = () => props.onHover?.(undefined);
   return (
     <section {...stylex.attrs(styles.root)} aria-label="Evolución del portafolio">
       <svg
@@ -290,8 +287,6 @@ export function PortfolioChart(props: PortfolioChartProps) {
 }
 
 export default PortfolioChart;
-
-const DAY = 24 * 60 * 60 * 1000;
 
 function reducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;

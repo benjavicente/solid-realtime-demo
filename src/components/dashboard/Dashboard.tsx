@@ -1,10 +1,10 @@
 import * as stylex from "@stylexjs/stylex";
-import { createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import type { PriceTick } from "../../market/types";
 import { createMarketFeed } from "../../state/market";
 import { useMarketEvents } from "../../state/market-events";
 import { createPortfolioState } from "../../state/portfolio";
-import { PortfolioChart, type SeriesPoint } from "../chart/PortfolioChart";
+import { PortfolioChart } from "../chart/PortfolioChart";
 import { ui } from "../../ui/styles";
 import { Brand } from "./Brand";
 import { ChangesTable } from "./ChangesTable";
@@ -29,8 +29,15 @@ export function Dashboard(props: { history: readonly PriceTick[] }) {
   const portfolio = createPortfolioState(market);
   useMarketEvents();
 
-  // The chart sample under the pointer, shown as the top-right valuation.
-  const [hovered, setHovered] = createSignal<SeriesPoint | undefined>(undefined);
+  // The chart day under the pointer, shown as the top-right valuation. Its value is
+  // recomputed from the prices and holdings of that day, so it stays current with
+  // new ticks and rebalances, and falls back to the live total once it leaves the window.
+  const [hoveredT, setHoveredT] = createSignal<number | undefined>(undefined);
+  const hoveredValue = createMemo(() => {
+    const t = hoveredT();
+    const tick = t === undefined ? undefined : market.ticks().find((item) => item.t === t);
+    return tick && portfolio.timeline().at(tick.t).totalValue(tick.prices);
+  });
 
   return (
     <Layout
@@ -45,7 +52,12 @@ export function Dashboard(props: { history: readonly PriceTick[] }) {
     >
       <Topbar
         title="Evolución del portafolio"
-        aside={<Valuation value={hovered()?.total ?? portfolio.total()} at={hovered()?.t} />}
+        aside={
+          <Valuation
+            value={hoveredValue() ?? portfolio.total()}
+            at={hoveredValue() === undefined ? undefined : hoveredT()}
+          />
+        }
       >
         <SimClock now={market.tick().t} startedAt={portfolio.timeline().startedAt} />
         <MarketAlerts events={market.tick().events ?? []} now={market.tick().t} />
@@ -54,7 +66,8 @@ export function Dashboard(props: { history: readonly PriceTick[] }) {
         <PortfolioChart
           ticks={market.ticks()}
           timeline={portfolio.timeline()}
-          onHover={setHovered}
+          hoveredT={hoveredT()}
+          onHover={setHoveredT}
         />
       </div>
     </Layout>
@@ -62,14 +75,14 @@ export function Dashboard(props: { history: readonly PriceTick[] }) {
 }
 
 /** Server-rendered placeholder with the page frame, shown until the dashboard is ready. */
-export function DashboardShell() {
+export function DashboardShell(props: { status?: string }) {
   return (
     <Layout
       sidebar={
         <>
           <Brand />
           <p {...stylex.attrs(ui.hint)} role="status">
-            Cargando…
+            {props.status ?? "Cargando…"}
           </p>
         </>
       }

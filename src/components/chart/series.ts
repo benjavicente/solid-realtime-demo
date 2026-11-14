@@ -47,7 +47,7 @@ function valuePoint(tick: PriceTick, portfolio: Portfolio): SeriesPoint {
   return { t: tick.t, values, total: values.reduce((sum, value) => sum + value, 0) };
 }
 
-/** Samples the visible year, preserving endpoints and instantaneous allocation changes. */
+/** Samples the visible window, preserving endpoints and instantaneous allocation changes. */
 export function buildSeries(
   ticks: readonly PriceTick[],
   timeline: PortfolioTimeline,

@@ -15,7 +15,7 @@ export function Valuation(props: { value: number; at?: number }) {
   const change = () => (props.value / INITIAL_CAPITAL_CLP - 1) * 100;
   const up = () => change() >= -0.05;
   return (
-    <div {...stylex.attrs(styles.valuation)} aria-live="polite">
+    <div {...stylex.attrs(styles.valuation)}>
       <div {...stylex.attrs(styles.label)}>
         {props.at === undefined
           ? "Valorización actual"

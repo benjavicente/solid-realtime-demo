@@ -84,7 +84,7 @@ describe("buildSeries", () => {
 });
 
 describe("chart geometry", () => {
-  it("keeps a fixed year domain and shows only markers within the window", () => {
+  it("keeps a fixed 90-day domain and shows only markers within the window", () => {
     const timeline = PortfolioTimeline.start(portfolio(2, 7), -HISTORY_WINDOW_MS - 1)
       .commit(portfolio(1, 17), -10)
       .commit(portfolio(0, 27), 0);

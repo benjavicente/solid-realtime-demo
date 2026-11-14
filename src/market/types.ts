@@ -4,8 +4,8 @@ import type { FundId } from "./funds";
  * Names of the hidden events a client can send to the shared market. Each one
  * replays a recent real market episode (Sep–Nov 2026) on the simulated funds.
  *
- * - `send-spy` (Nov 2026): amid reports of a possible espionage case around its
- *   CEO, who resigned, Nvidia fell 13% in a week (sixth weekly loss in a row).
+ * - `send-spy` (Nov 2026): amid reports of an espionage-related investigation and
+ *   the departure of its CEO, Nvidia fell 13% in a week (sixth weekly loss in a row).
  *   Andes Arriesgado slides ~10–15% over 7 days, then partially recovers.
  * - `send-intel` (30 Oct 2026): Intel fell ~29% on weak guidance and tech lost
  *   more than US$1 trillion. Andes crashes ~14–20% over 2 days, Manquehue dips

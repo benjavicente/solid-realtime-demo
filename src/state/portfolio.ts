@@ -90,14 +90,25 @@ export function createPortfolioState(market: MarketFeed) {
     });
   };
   const useCurrentAllocation = () => {
+    // Fund weights rescaled to 100 % (cash excluded) and rounded to 0.1 %; the
+    // rounding remainder goes to the largest fund so the targets sum exactly 100.
+    const weights = FUND_IDS.map((id) => allocation()[id]);
+    const sum = weights.reduce((total, weight) => total + weight, 0) || 1;
+    const tenths = weights.map((weight) => Math.round((weight / sum) * 1000));
+    const largest = tenths.indexOf(Math.max(...tenths));
+    tenths[largest] += 1000 - tenths.reduce((total, value) => total + value, 0);
     setTargets((draft) => {
-      for (const id of FUND_IDS) draft[id] = String(Math.round(allocation()[id] * 10) / 10);
+      FUND_IDS.forEach((id, i) => {
+        draft[id] = String(tenths[i] / 10);
+      });
     });
   };
   const rebalance = () => {
     const value = result();
     if (!value.ok || value.plan.isEmpty) return;
     const at = market.tick().t;
+    // Guard against a clock that went back (server restart, see createMarketFeed).
+    if (at < timeline().entries[timeline().entries.length - 1].at) return;
     setTimeline((current) => current.commit(current.current.apply(value.plan), at));
   };
   const restart = () => {
