@@ -1,7 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
 import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
-import type { PriceTick } from "../../market/types";
+import type { MarketEvent, PriceTick } from "../../market/types";
 import type { PortfolioTimeline } from "../../portfolio";
+import { EVENT_COPY } from "../../market/events";
 import { buildGeometry, FRAME } from "./geometry";
 import { buildSeries, type SeriesPoint } from "./series";
 
@@ -24,7 +25,14 @@ const styles = stylex.create({
 export function PortfolioChart(props: PortfolioChartProps) {
   const id = createUniqueId();
   const series = createMemo(() => buildSeries(props.ticks, props.timeline));
-  const geometry = createMemo(() => buildGeometry(series(), props.timeline));
+  // Distinct market events present in the price history (one per start time).
+  const events = createMemo(() => {
+    const byStart = new Map<string, MarketEvent>();
+    for (const tick of props.ticks)
+      for (const event of tick.events ?? []) byStart.set(`${event.kind}-${event.startedAt}`, event);
+    return [...byStart.values()];
+  });
+  const geometry = createMemo(() => buildGeometry(series(), props.timeline, events()));
   // Hovered sample, tracked by timestamp so it survives new ticks while the
   // pointer rests (as long as the sample is still in the window).
   const [hoveredT, setHoveredT] = createSignal<number | undefined>(undefined);
@@ -135,6 +143,24 @@ export function PortfolioChart(props: PortfolioChartProps) {
                 stroke-width="2"
                 stroke-linejoin="round"
               />
+            </g>
+          )}
+        </For>
+        <For each={geometry().bands} keyed={false}>
+          {(band) => (
+            <g pointer-events="none">
+              <title>{EVENT_COPY[band().kind].title}</title>
+              <rect
+                x={band().x}
+                y={FRAME.top}
+                width={band().width}
+                height={FRAME.bottom - FRAME.top}
+                fill="#1f4a3b"
+                fill-opacity="0.08"
+              />
+              <text x={band().x + 4} y={FRAME.top + 14} fill="#1f4a3b" font-size="11">
+                {EVENT_COPY[band().kind].icon}
+              </text>
             </g>
           )}
         </For>

@@ -175,6 +175,9 @@ importers:
       '@tanstack/charts':
         specifier: ^1.5.0
         version: 1.5.0(solid-js@2.0.0-rc.21)
+      '@tanstack/hotkeys':
+        specifier: ^0.29.0
+        version: 0.29.0
       number-flow:
         specifier: ^0.6.2
         version: 0.6.2
@@ -900,6 +903,10 @@ packages:
         optional: true
       vue:
         optional: true
+
+  '@tanstack/hotkeys@0.29.0':
+    resolution: {integrity: sha512-aRL4MICfFmvzVgz5pAC1JmFTeeJjd5KbFA4ZLAZuqAPoqsDUUtJfTZpx+WKKNDJGi3X/p9gO87CZ+alFHTd3Og==}
+    engines: {node: '>=20'}
 
   '@tybys/wasm-util@0.10.4':
     resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
@@ -2357,6 +2364,8 @@ snapshots:
       tslib: 2.9.1
     optionalDependencies:
       solid-js: 2.0.0-rc.21
+
+  '@tanstack/hotkeys@0.29.0': {}
 
   '@tybys/wasm-util@0.10.4':
     dependencies:

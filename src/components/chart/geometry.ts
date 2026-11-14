@@ -1,6 +1,7 @@
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { scaleUtc } from "@tanstack/charts/scales/time";
 import { CASH_COLOR, FUNDS, HISTORY_WINDOW_MS } from "../../market/funds";
+import type { MarketEvent } from "../../market/types";
 import type { PortfolioTimeline } from "../../portfolio";
 import type { SeriesPoint } from "./series";
 
@@ -24,7 +25,11 @@ export function formatAxisMoney(value: number): string {
   return moneyFormat.format(value);
 }
 
-export function buildGeometry(points: readonly SeriesPoint[], timeline: PortfolioTimeline) {
+export function buildGeometry(
+  points: readonly SeriesPoint[],
+  timeline: PortfolioTimeline,
+  events: readonly MarketEvent[] = [],
+) {
   const end = points[points.length - 1]?.t ?? timeline.startedAt;
   const start = end - HISTORY_WINDOW_MS;
   // TanStack's standalone scales are SSR-safe. The four ordered layers use a
@@ -58,8 +63,17 @@ export function buildGeometry(points: readonly SeriesPoint[], timeline: Portfoli
   ]
     .filter((entry) => entry.at >= start && entry.at <= end)
     .map((entry) => ({ ...entry, x: positionX(entry.at) }));
+  // Shaded spans for market events (e.g. the spy week) inside the window.
+  const bands = events
+    .filter((event) => event.endsAt > start && event.startedAt < end)
+    .map((event) => {
+      const x1 = positionX(Math.max(start, event.startedAt));
+      const x2 = positionX(Math.min(end, event.endsAt));
+      return { kind: event.kind, x: x1, width: Math.max(0, x2 - x1) };
+    });
   return {
     layers,
+    bands,
     totalPath,
     markers,
     split: Math.min(FRAME.right, Math.max(FRAME.left, positionX(timeline.startedAt))),
