@@ -1,12 +1,23 @@
+/// <reference types="vitest/config" />
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import { cloudflare } from "@cloudflare/vite-plugin";
 import solid from "@solidjs/vite-plugin";
 import stylex from "@stylexjs/unplugin";
 
 export default defineConfig({
+  resolve: {
+    alias: { "~": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
   plugins: [
-    cloudflare(),
     stylex.vite({ useCSSLayers: true }),
-    solid({ start: true, ssr: true, serverFunctions: { components: true } }),
+    solid({
+      start: { nodeServer: true },
+      ssr: true,
+      serverFunctions: { components: true },
+    }),
   ],
+  test: {
+    include: ["src/**/*.test.ts"],
+    environment: "node",
+  },
 });
