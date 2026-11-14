@@ -14,9 +14,9 @@ const portfolio = (shares: number, cash = 0) =>
 const tick = (t: number, price = 10): PriceTick => ({
   t,
   prices: {
-    "volatil-villarrica": price,
-    "moderado-manquehue": 20,
-    "conservador-cristobal": 30,
+    "andes-arriesgado": price,
+    "manquehue-moderado": 20,
+    "cristobal-conservador": 30,
   },
 });
 

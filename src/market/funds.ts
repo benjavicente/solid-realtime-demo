@@ -1,7 +1,7 @@
 // Shared market configuration, imported by both the server simulation and the
 // client. Everything here is plain data so it can cross the server boundary.
 
-export type FundId = "volatil-villarrica" | "moderado-manquehue" | "conservador-cristobal";
+export type FundId = "andes-arriesgado" | "manquehue-moderado" | "cristobal-conservador";
 
 export type RiskLevel = "high" | "medium" | "low";
 
@@ -27,8 +27,8 @@ export interface FundProfile {
 
 export const FUNDS: readonly FundProfile[] = [
   {
-    id: "volatil-villarrica",
-    name: "Volátil Villarrica",
+    id: "andes-arriesgado",
+    name: "Andes Arriesgado",
     risk: "high",
     initialPrice: 185_000,
     annualDrift: 0.14,
@@ -39,8 +39,8 @@ export const FUNDS: readonly FundProfile[] = [
     color: "#f2a7a0",
   },
   {
-    id: "moderado-manquehue",
-    name: "Moderado Manquehue",
+    id: "manquehue-moderado",
+    name: "Manquehue Moderado",
     risk: "medium",
     initialPrice: 12_500,
     annualDrift: 0.08,
@@ -51,8 +51,8 @@ export const FUNDS: readonly FundProfile[] = [
     color: "#f5d491",
   },
   {
-    id: "conservador-cristobal",
-    name: "Conservador Cristóbal",
+    id: "cristobal-conservador",
+    name: "Cristóbal Conservador",
     risk: "low",
     initialPrice: 1_000,
     annualDrift: 0.04,
@@ -74,9 +74,9 @@ export function getFund(id: FundId): FundProfile {
 
 /** Initial allocation plan, in percent. Also the default target inputs. */
 export const INITIAL_PLAN: Readonly<Record<FundId, number>> = {
-  "volatil-villarrica": 10,
-  "moderado-manquehue": 30,
-  "conservador-cristobal": 60,
+  "andes-arriesgado": 10,
+  "manquehue-moderado": 30,
+  "cristobal-conservador": 60,
 };
 
 /** Capital every client starts with, in CLP. */

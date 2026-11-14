@@ -1,4 +1,4 @@
-import { FUNDS, YEAR_MS } from "../../market/funds";
+import { FUND_IDS, FUNDS, YEAR_MS, type FundId } from "../../market/funds";
 import type { PriceTick } from "../../market/types";
 import type { Portfolio, PortfolioTimeline } from "../../portfolio";
 
@@ -29,20 +29,10 @@ function tickAt(ticks: readonly PriceTick[], t: number): PriceTick {
   const a = ticks[right - 1];
   const b = ticks[right];
   const ratio = (t - a.t) / (b.t - a.t);
-  return {
-    t,
-    prices: {
-      "volatil-villarrica":
-        a.prices["volatil-villarrica"] +
-        ratio * (b.prices["volatil-villarrica"] - a.prices["volatil-villarrica"]),
-      "moderado-manquehue":
-        a.prices["moderado-manquehue"] +
-        ratio * (b.prices["moderado-manquehue"] - a.prices["moderado-manquehue"]),
-      "conservador-cristobal":
-        a.prices["conservador-cristobal"] +
-        ratio * (b.prices["conservador-cristobal"] - a.prices["conservador-cristobal"]),
-    },
-  };
+  const prices = Object.fromEntries(
+    FUND_IDS.map((id) => [id, a.prices[id] + ratio * (b.prices[id] - a.prices[id])]),
+  ) as Record<FundId, number>;
+  return { t, prices };
 }
 
 function valuePoint(tick: PriceTick, portfolio: Portfolio): SeriesPoint {
