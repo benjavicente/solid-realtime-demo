@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import solid from "@solidjs/vite-plugin";
@@ -11,13 +10,9 @@ export default defineConfig({
   plugins: [
     stylex.vite({ useCSSLayers: true }),
     solid({
-      start: { nodeServer: true },
+      start: { app: "src/app.tsx", nodeServer: true },
       ssr: true,
       serverFunctions: { components: true },
     }),
   ],
-  test: {
-    include: ["src/**/*.test.ts"],
-    environment: "node",
-  },
 });
