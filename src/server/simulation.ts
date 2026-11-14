@@ -24,7 +24,7 @@ export const DEFAULT_START = Date.UTC(2020, 0, 1);
 /**
  * How each fund moves, on top of the drift, volatility and jumps in `FUNDS`.
  *
- * Daily log-return = fair-value slope − reversion toward the fair value
+ * Daily log-return = trend-adjusted fair-value slope − reversion toward it
  *                  + σₜ·(market shock mixed with an idiosyncratic shock) + jumps.
  *
  * - `marketWeight`: loading on the shared market shock, so funds co-move.
@@ -36,6 +36,18 @@ export const DEFAULT_START = Date.UTC(2020, 0, 1);
  *   enough to keep them from wandering off over a long-running process.
  * - `maxLogGrowth`: the fair value starts growing at `annualDrift` and levels off
  *   at `initialPrice · e^maxLogGrowth`, so hours of uptime never explode prices.
+ *
+ * Trends: on top of that curve, the fair value drifts by a persistent trend (a
+ * yearly log-drift), so prices move in runs of weeks to months instead of only
+ * day-to-day noise.
+ * - `trendLoading`: drift per unit of the shared market regime (bull +1,
+ *   sideways 0, bear −1.3), so every fund feels the same bull and bear phases.
+ * - `trendVolatility`/`trendDays`: stationary deviation and e-folding time of the
+ *   fund's own trend, an Ornstein–Uhlenbeck process.
+ * - `trendReversionPerYear`: pull of the accumulated trend offset back to the
+ *   fair-value curve, so trends never wander off for good.
+ * - `minSlopeShare`: the trend never takes the fair value's slope below this share
+ *   of the curve's slope (the conservative fund only rises faster or slower).
  */
 interface FundDynamics {
   readonly marketWeight: number;
@@ -44,6 +56,11 @@ interface FundDynamics {
   readonly tailDof: number;
   readonly reversionPerYear: number;
   readonly maxLogGrowth: number;
+  readonly trendLoading: number;
+  readonly trendVolatility: number;
+  readonly trendDays: number;
+  readonly trendReversionPerYear: number;
+  readonly minSlopeShare?: number;
 }
 
 const DYNAMICS: Readonly<Record<FundId, FundDynamics>> = {
@@ -54,6 +71,10 @@ const DYNAMICS: Readonly<Record<FundId, FundDynamics>> = {
     tailDof: 4,
     reversionPerYear: 0.5,
     maxLogGrowth: Math.log(5),
+    trendLoading: 2,
+    trendVolatility: 0.9,
+    trendDays: 40,
+    trendReversionPerYear: 1.2,
   },
   "manquehue-moderado": {
     marketWeight: 0.6,
@@ -62,6 +83,10 @@ const DYNAMICS: Readonly<Record<FundId, FundDynamics>> = {
     tailDof: 0,
     reversionPerYear: 1,
     maxLogGrowth: Math.log(5),
+    trendLoading: 0.4,
+    trendVolatility: 0.15,
+    trendDays: 45,
+    trendReversionPerYear: 1,
   },
   "cristobal-conservador": {
     marketWeight: 0.2,
@@ -70,12 +95,29 @@ const DYNAMICS: Readonly<Record<FundId, FundDynamics>> = {
     tailDof: 0,
     reversionPerYear: 25,
     maxLogGrowth: Math.log(4),
+    trendLoading: 0.02,
+    trendVolatility: 0.01,
+    trendDays: 60,
+    trendReversionPerYear: 0.5,
+    minSlopeShare: 0.3,
   },
 };
 
+/**
+ * Market regimes shared by every fund: a Markov chain that leaves a regime with
+ * probability 1/`days` per day (so it lasts `days` on average) for one of the
+ * others. The drift follows the regime's level smoothly over a few days.
+ */
+const REGIMES = [
+  { name: "bull", level: 1, days: 60 },
+  { name: "sideways", level: 0, days: 35 },
+  { name: "bear", level: -1.3, days: 40 },
+] as const;
+const REGIME_SMOOTHING_DAYS = 8;
+
 /** GARCH variance stays within these multiples of the fund's long-run volatility. */
 const MIN_VOL_RATIO = 0.5;
-const MAX_VOL_RATIO = 3;
+const MAX_VOL_RATIO = 2.2;
 
 /** How strongly an event moves one fund over its duration. */
 interface EventEffect {
@@ -86,50 +128,68 @@ interface EventEffect {
   readonly volatilityBoost: number;
 }
 
+/** A phase after an event: `share` of the event's move added over `days`. */
+interface Aftermath {
+  /** Positive continues the move (momentum); negative gives part of it back. */
+  readonly share: number;
+  readonly days: number;
+}
+
 interface EventSpec {
   /** The fund the event targets; undefined for market-wide events. */
   readonly fundId?: FundId;
   readonly days: number;
   readonly effects: Partial<Record<FundId, EventEffect>>;
-  /** Share of each fund's move given back over `reboundDays` after the event. */
-  readonly reboundShare: number;
-  readonly reboundDays: number;
+  /** What follows the event, phase after phase. */
+  readonly aftermath: readonly Aftermath[];
 }
 
 const EVENTS: Readonly<Record<MarketEventKind, EventSpec>> = {
-  /** A leak hits Andes Arriesgado for a week, then it partially recovers. */
-  "send-spy": {
+  /**
+   * 27 Jan 2025: DeepSeek's low-cost R1 model sent Nvidia down ~17% in a day
+   * (~US$589 billion, the largest one-day loss of market value ever) and the
+   * Nasdaq down more than 3%. The tech-heavy Andes crashes over two days; Nvidia
+   * won back a good part of it over the following weeks.
+   */
+  "send-deepseek": {
     fundId: "andes-arriesgado",
-    days: 7,
-    effects: { "andes-arriesgado": { min: -0.28, max: -0.15, volatilityBoost: 1.5 } },
-    reboundShare: 0.35,
-    reboundDays: 12,
-  },
-  /** A market-wide bubble: everything inflates by risk, then partially corrects. */
-  "send-moon": {
-    days: 7,
+    days: 2,
     effects: {
-      "andes-arriesgado": { min: 0.2, max: 0.4, volatilityBoost: 1.3 },
-      "manquehue-moderado": { min: 0.05, max: 0.1, volatilityBoost: 1.4 },
-      "cristobal-conservador": { min: 0.01, max: 0.02, volatilityBoost: 2 },
+      "andes-arriesgado": { min: -0.2, max: -0.14, volatilityBoost: 1.2 },
+      "manquehue-moderado": { min: -0.03, max: -0.01, volatilityBoost: 1.2 },
     },
-    reboundShare: 0.35,
-    reboundDays: 14,
+    aftermath: [{ share: -0.45, days: 21 }],
   },
   /**
-   * Mass pension withdrawals force funds to sell bonds, which hits the most
-   * conservative fund hardest (as in Chile's 2020 AFP withdrawals). Andes is left
-   * to its own dynamics.
+   * 25 May 2023: Nvidia guided US$11 billion of revenue (vs ~US$7.2 billion
+   * expected) on AI demand and rose ~24% in a day, adding ~US$184 billion and
+   * lifting the Nasdaq. The euphoria runs on for a few days, then a small part is
+   * given back.
    */
-  "send-retiro": {
+  "send-nvidia": {
+    days: 2,
+    effects: {
+      "andes-arriesgado": { min: 0.15, max: 0.25, volatilityBoost: 1.2 },
+      "manquehue-moderado": { min: 0.02, max: 0.04, volatilityBoost: 1.2 },
+    },
+    aftermath: [
+      { share: 0.08, days: 5 },
+      { share: -0.2, days: 30 },
+    ],
+  },
+  /**
+   * July 2020, Chile: Ley 21.248 allowed the first 10% withdrawal from AFP pension
+   * funds. Paying it forced bond sales, which hit the conservative funds (D and E)
+   * hardest; Andes is left to its own dynamics.
+   */
+  "send-afp": {
     fundId: "cristobal-conservador",
     days: 14,
     effects: {
       "cristobal-conservador": { min: -0.08, max: -0.05, volatilityBoost: 4 },
       "manquehue-moderado": { min: -0.03, max: -0.01, volatilityBoost: 1.2 },
     },
-    reboundShare: 0.35,
-    reboundDays: 30,
+    aftermath: [{ share: -0.35, days: 30 }],
   },
 };
 
@@ -195,10 +255,10 @@ interface Episode {
  *
  * A fund's log-price is its base process plus an event offset. Events only move
  * the offset, so the base keeps its usual dynamics (and noise) underneath; the
- * offset fades once no event or rebound is driving it.
+ * offset fades once no event or aftermath is driving it.
  */
 export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
-  const { normal, studentT, poisson } = createRandom(seed);
+  const { random, normal, studentT, poisson } = createRandom(seed);
   // Events draw from their own stream, so triggering one leaves the base path as is.
   const eventRandom = createRandom(seed ^ 0x45564e54).random;
   const funds = FUNDS.map((profile) => {
@@ -212,19 +272,55 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
       logPrice: Math.log(profile.initialPrice),
       variance: longRunVariance,
       eventLog: 0,
-      rebounds: new Map<MarketEventKind, { dailyDrift: number; days: number }>(),
+      /** The fund's own trend (yearly log-drift) and the offset trends added so far. */
+      trend: 0,
+      trendLog: 0,
+      trendPersistence: Math.exp(-1 / dynamics.trendDays),
+      trendSlope: 0,
+      aftermaths: new Map<MarketEventKind, { dailyDrift: number; days: number }[]>(),
     };
   });
+  let regime = Math.floor(random() * REGIMES.length);
+  let marketTrend = REGIMES[regime]!.level;
   const byId = new Map(funds.map((fund) => [fund.profile.id, fund]));
   let time = start;
   const episodes = new Map<MarketEventKind, Episode>();
   let lastEvents: readonly MarketEvent[] = [];
 
+  /** The capped growth curve, shifted by the trend offset. */
   function fairValue(fund: (typeof funds)[number], years: number) {
     const { annualDrift, initialPrice } = fund.profile;
     const cap = fund.dynamics.maxLogGrowth;
     const decay = Math.exp((-annualDrift * years) / cap);
-    return { log: Math.log(initialPrice) + cap * (1 - decay), slope: annualDrift * decay };
+    return {
+      log: Math.log(initialPrice) + cap * (1 - decay) + fund.trendLog,
+      slope: annualDrift * decay,
+    };
+  }
+
+  /** Moves the shared regime and every fund's trend one day forward. */
+  function stepTrends(years: number) {
+    if (random() < 1 / REGIMES[regime]!.days) {
+      regime = (regime + 1 + Math.floor(random() * (REGIMES.length - 1))) % REGIMES.length;
+    }
+    marketTrend +=
+      (REGIMES[regime]!.level - marketTrend) * (1 - Math.exp(-1 / REGIME_SMOOTHING_DAYS));
+    for (const fund of funds) {
+      const { dynamics, trendPersistence: phi } = fund;
+      fund.trend = phi * fund.trend + Math.sqrt(1 - phi ** 2) * dynamics.trendVolatility * normal();
+      const curveSlope = fairValue(fund, years).slope;
+      const offset = fund.trendLog;
+      // The cubic term only matters for large offsets: it bounds the long run.
+      let slope =
+        dynamics.trendLoading * marketTrend +
+        fund.trend -
+        dynamics.trendReversionPerYear * offset * (1 + 8 * offset ** 2);
+      if (dynamics.minSlopeShare !== undefined) {
+        slope = Math.max(slope, (dynamics.minSlopeShare - 1) * curveSlope);
+      }
+      fund.trendLog += slope * DT;
+      fund.trendSlope = slope;
+    }
   }
 
   function activeEvents(): readonly MarketEvent[] | undefined {
@@ -247,13 +343,17 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
       if (time < episode.event.endsAt) continue;
       const spec = EVENTS[kind];
       for (const [fundId, bridge] of episode.bridges) {
-        const dailyDrift = (-spec.reboundShare * bridge.offset) / spec.reboundDays;
-        byId.get(fundId)!.rebounds.set(kind, { dailyDrift, days: spec.reboundDays });
+        const phases = spec.aftermath.map(({ share, days }) => ({
+          dailyDrift: (share * bridge.offset) / days,
+          days,
+        }));
+        byId.get(fundId)!.aftermaths.set(kind, phases);
       }
       episodes.delete(kind);
     }
     const events = activeEvents();
     const years = (time - start) / YEAR_MS;
+    stepTrends(years);
     const market = normal();
 
     for (const fund of funds) {
@@ -270,13 +370,14 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
       let jump = 0;
       const jumps = profile.jumpsPerYear > 0 ? poisson(profile.jumpsPerYear * DT) : 0;
       for (let i = 0; i < jumps; i++) jump += profile.jumpMean + profile.jumpStd * normal();
-      // Compensate the jumps' mean so the expected log-return stays `annualDrift`.
-      const drift = fair.slope - profile.jumpsPerYear * profile.jumpMean - reversion;
+      // Compensate the jumps' mean so the expected log-return follows the fair value.
+      const drift =
+        fair.slope + fund.trendSlope - profile.jumpsPerYear * profile.jumpMean - reversion;
       let innovation = sigma * shock + jump;
       const baseReturn = drift * DT + innovation;
       fund.logPrice += baseReturn;
 
-      // Events and rebounds move the offset on top of the base.
+      // Events and their aftermath move the offset on top of the base.
       const bridges: Bridge[] = [];
       const planned: { expected: number; daily: number }[] = [];
       for (const { event, bridges: byFund } of episodes.values()) {
@@ -291,9 +392,11 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
         });
       }
       let eventReturn = 0;
-      for (const rebound of fund.rebounds.values()) eventReturn += rebound.dailyDrift;
-      for (const [kind, rebound] of fund.rebounds) {
-        if (--rebound.days <= 0) fund.rebounds.delete(kind);
+      for (const [kind, phases] of fund.aftermaths) {
+        const phase = phases[0]!;
+        eventReturn += phase.dailyDrift;
+        if (--phase.days <= 0) phases.shift();
+        if (phases.length === 0) fund.aftermaths.delete(kind);
       }
       if (bridges.length > 0) {
         // Each bridge follows a straight path to its target, pulling part of the
@@ -316,7 +419,7 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
         });
         eventReturn += pushed + noise;
         innovation += noise;
-      } else if (fund.rebounds.size === 0 && eventReturn === 0) {
+      } else if (fund.aftermaths.size === 0 && eventReturn === 0) {
         eventReturn = -fund.eventLog * (1 - Math.exp(-1 / EVENT_MEMORY_DAYS));
       }
       fund.eventLog = Math.min(MAX_EVENT_LOG, Math.max(MIN_EVENT_LOG, fund.eventLog + eventReturn));
@@ -384,7 +487,7 @@ export function createMarket(seed = DEFAULT_SEED, start = DEFAULT_START) {
           target,
           volatilityBoost: effect.volatilityBoost,
         });
-        fund.rebounds.delete(kind);
+        fund.aftermaths.delete(kind);
       }
     }
     episodes.set(kind, episode);
@@ -417,7 +520,7 @@ function startSimulation() {
   };
 }
 
-const KEY = Symbol.for("solid-realtime-demo.market-simulation.v5");
+const KEY = Symbol.for("solid-realtime-demo.market-simulation.v6");
 const globals = globalThis as typeof globalThis & { [KEY]?: ReturnType<typeof startSimulation> };
 const simulation = (globals[KEY] ??= startSimulation());
 

@@ -6,7 +6,7 @@ import { MARKET_EVENT_KINDS, type MarketEventKind } from "../market/types";
 
 /**
  * Hidden market events: type the secret word anywhere on the page, or call
- * `moka.send("send-spy")` from the browser console (see README).
+ * `moka.send("send-afp")` from the browser console (see README).
  */
 export function useMarketEvents() {
   const send = (kind: MarketEventKind) => void sendMarketEvent(kind);

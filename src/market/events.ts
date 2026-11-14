@@ -5,23 +5,25 @@ export const EVENT_COPY: Record<
   MarketEventKind,
   { readonly word: string; readonly icon: string; readonly title: string; readonly message: string }
 > = {
-  "send-spy": {
-    word: "spy",
-    icon: "🕵️",
-    title: "Un espía filtró malas noticias",
-    message: "Un espía filtró malas noticias: Andes Arriesgado atraviesa una semana difícil",
-  },
-  "send-moon": {
-    word: "moon",
-    icon: "🚀",
-    title: "Euforia en el mercado",
-    message: "Euforia en el mercado: todos los fondos se inflan, los más riesgosos más",
-  },
-  "send-retiro": {
-    word: "retiro",
-    icon: "🏦",
-    title: "Retiro masivo de fondos de pensiones",
+  "send-deepseek": {
+    word: "deepseek",
+    icon: "📉",
+    title: "DeepSeek R1 (27 ene 2025)",
     message:
-      "Retiro masivo de fondos de pensiones: las ventas forzadas de bonos golpean a Cristóbal Conservador",
+      "27 ene 2025 · DeepSeek lanza R1 y Nvidia cae 17 % en un día (−US$589 mil millones, récord histórico): Andes Arriesgado se desploma",
+  },
+  "send-nvidia": {
+    word: "nvidia",
+    icon: "🚀",
+    title: "Resultados de Nvidia (25 may 2023)",
+    message:
+      "25 may 2023 · Nvidia proyecta US$11 mil millones por IA y sube 24 % en un día: euforia en los fondos de mayor riesgo",
+  },
+  "send-afp": {
+    word: "afp",
+    icon: "🏦",
+    title: "Primer retiro del 10 % de las AFP (jul 2020)",
+    message:
+      "Jul 2020 · Primer retiro del 10 % de las AFP: las ventas forzadas de bonos golpean a Cristóbal Conservador",
   },
 };

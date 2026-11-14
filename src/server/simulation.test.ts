@@ -102,17 +102,67 @@ function maxDrawdown(prices: readonly number[]) {
   return worst;
 }
 
-/** Lag-1 autocorrelation of absolute returns: positive when volatility clusters. */
-function absReturnAutocorrelation(prices: readonly number[]) {
-  const abs = logReturns(prices).map(Math.abs);
-  const mean = abs.reduce((sum, value) => sum + value, 0) / abs.length;
+/** Lag-1 autocorrelation of a series. */
+function autocorrelation(values: readonly number[]) {
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
   let numerator = 0;
   let denominator = 0;
-  for (let i = 0; i < abs.length; i++) {
-    denominator += (abs[i]! - mean) ** 2;
-    if (i > 0) numerator += (abs[i]! - mean) * (abs[i - 1]! - mean);
+  for (let i = 0; i < values.length; i++) {
+    denominator += (values[i]! - mean) ** 2;
+    if (i > 0) numerator += (values[i]! - mean) * (values[i - 1]! - mean);
   }
   return numerator / denominator;
+}
+
+/** Lag-1 autocorrelation of absolute returns: positive when volatility clusters. */
+function absReturnAutocorrelation(prices: readonly number[]) {
+  return autocorrelation(logReturns(prices).map(Math.abs));
+}
+
+/** Log-returns over consecutive, non-overlapping blocks of `days`. */
+function blockReturns(dailyReturns: readonly number[], days: number) {
+  const blocks: number[] = [];
+  for (let i = 0; i + days <= dailyReturns.length; i += days) {
+    blocks.push(dailyReturns.slice(i, i + days).reduce((sum, value) => sum + value, 0));
+  }
+  return blocks;
+}
+
+/** The same daily returns in a seeded random order: an i.i.d. baseline. */
+function shuffled(values: readonly number[], seed: number) {
+  const rng = mulberry(seed);
+  const copy = [...values];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [copy[i], copy[j]] = [copy[j]!, copy[i]!];
+  }
+  return copy;
+}
+
+function variance(values: readonly number[]) {
+  return std(values) ** 2;
+}
+
+/**
+ * How much prices move in runs, from daily log-returns:
+ * - `autocorrelation`: of consecutive 10-day returns, positive when a rise tends
+ *   to follow a rise;
+ * - `varianceRatio`: variance of 60-day returns over 60 × the daily variance,
+ *   above 1 when moves persist instead of cancelling out.
+ * `iid` is the same for the returns shuffled, which keeps their distribution but
+ * removes any trend.
+ */
+function trendStats(prices: readonly number[], seed: number) {
+  const measure = (returns: readonly number[]) => ({
+    autocorrelation: autocorrelation(blockReturns(returns, 10)),
+    varianceRatio: variance(blockReturns(returns, 60)) / (60 * variance(returns)),
+  });
+  const returns = logReturns(prices);
+  return { trend: measure(returns), iid: measure(shuffled(returns, seed)) };
+}
+
+function mean(values: readonly number[]) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function correlation(a: readonly number[], b: readonly number[]) {
@@ -134,6 +184,16 @@ function median(values: readonly number[]) {
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
+const EVENT_DAYS: Record<MarketEventKind, number> = {
+  "send-deepseek": 2,
+  "send-nvidia": 2,
+  "send-afp": 14,
+};
+
+function emptyByFund(): Record<FundId, number[]> {
+  return { [RISKY]: [], [MODERATE]: [], [CONSERVATIVE]: [] } as unknown as Record<FundId, number[]>;
+}
+
 describe("market simulation", () => {
   it("is reproducible for a seed", () => {
     expect(run(7, 30)).toEqual(run(7, 30));
@@ -145,25 +205,68 @@ describe("market simulation", () => {
       const conservative = annualizedVol(series(ticks, CONSERVATIVE));
       const moderate = annualizedVol(series(ticks, MODERATE));
       const risky = annualizedVol(series(ticks, RISKY));
-      expect(conservative).toBeLessThan(0.03);
+      expect(conservative).toBeGreaterThan(0.015);
+      expect(conservative).toBeLessThan(0.035);
       expect(moderate).toBeGreaterThan(3 * conservative);
-      expect(moderate).toBeGreaterThan(0.08);
-      expect(moderate).toBeLessThan(0.2);
+      expect(moderate).toBeGreaterThan(0.12);
+      expect(moderate).toBeLessThan(0.22);
       expect(risky).toBeGreaterThan(3 * moderate);
-      expect(risky).toBeLessThan(0.9);
+      expect(risky).toBeGreaterThan(0.55);
+      expect(risky).toBeLessThan(0.95);
+    }
+  });
+
+  it("moves in trends: returns persist over weeks, unlike i.i.d. noise", () => {
+    const stats = { risky: [], riskyIid: [], moderate: [], moderateIid: [] } as Record<
+      string,
+      ReturnType<typeof trendStats>["trend"][]
+    >;
+    for (const seed of SEEDS) {
+      const ticks = run(seed, 20 * 365);
+      const risky = trendStats(series(ticks, RISKY), seed);
+      const moderate = trendStats(series(ticks, MODERATE), seed);
+      stats.risky!.push(risky.trend);
+      stats.riskyIid!.push(risky.iid);
+      stats.moderate!.push(moderate.trend);
+      stats.moderateIid!.push(moderate.iid);
+      expect(risky.trend.varianceRatio).toBeGreaterThan(1.05);
+    }
+    const avg = (
+      list: ReturnType<typeof trendStats>["trend"][],
+      key: "autocorrelation" | "varianceRatio",
+    ) => mean(list.map((value) => value[key]));
+    // Shuffled returns: ~0 autocorrelation (±0.04 per seed with 730 blocks) and a
+    // variance ratio of ~1.
+    for (const iid of [stats.riskyIid!, stats.moderateIid!]) {
+      expect(Math.abs(avg(iid, "autocorrelation"))).toBeLessThan(0.04);
+      expect(Math.abs(avg(iid, "varianceRatio") - 1)).toBeLessThan(0.12);
+    }
+    for (const [trend, iid] of [
+      [stats.risky!, stats.riskyIid!],
+      [stats.moderate!, stats.moderateIid!],
+    ] as const) {
+      expect(avg(trend, "autocorrelation")).toBeGreaterThan(0.06);
+      expect(avg(trend, "autocorrelation")).toBeGreaterThan(avg(iid, "autocorrelation") + 0.04);
+      expect(avg(trend, "varianceRatio")).toBeGreaterThan(1.25);
+      expect(avg(trend, "varianceRatio")).toBeGreaterThan(avg(iid, "varianceRatio") + 0.2);
     }
   });
 
   it("keeps the conservative fund's 90-day drawdown small and its trend upward", () => {
+    let windows = 0;
+    let rising = 0;
     for (const seed of SEEDS) {
       const ticks = run(seed, 20 * WINDOW);
       for (let start = 0; start < ticks.length; start += WINDOW) {
         const prices = series(ticks.slice(start, start + WINDOW), CONSERVATIVE);
-        expect(maxDrawdown(prices)).toBeLessThan(0.015);
+        expect(maxDrawdown(prices)).toBeLessThan(0.02);
+        windows++;
+        if (prices.at(-1)! > prices[0]!) rising++;
       }
       const prices = series(ticks, CONSERVATIVE);
       expect(prices.at(-1)!).toBeGreaterThan(prices[0]!);
     }
+    expect(rising / windows).toBeGreaterThan(0.85);
   });
 
   it("gives the risky fund volatility clustering and deep drawdowns", () => {
@@ -194,99 +297,98 @@ describe("market simulation", () => {
     }
   });
 
-  it("send-spy sinks the risky fund for 7 days and tags only those ticks", () => {
-    const losses: number[] = [];
-    for (const seed of SEEDS) {
+  it("send-deepseek crashes Andes over 2 days, then it wins back ~45% in 3 weeks", () => {
+    const moves = emptyByFund();
+    const recovered: number[] = [];
+    for (const seed of MANY_SEEDS) {
       const market = createMarket(seed);
       for (let i = 0; i < WINDOW; i++) market.step();
       const before = market.step();
-      const event = market.trigger("send-spy");
-      expect(event).toMatchObject({ kind: "send-spy", fundId: RISKY });
+      const event = market.trigger("send-deepseek");
+      expect(event).toMatchObject({ kind: "send-deepseek", fundId: RISKY });
       expect(event.startedAt).toBe(before.t + DAY_MS);
-      expect(event.endsAt - event.startedAt).toBe(7 * DAY_MS);
+      expect(event.endsAt - event.startedAt).toBe(2 * DAY_MS);
       expect(Object.isFrozen(event)).toBe(true);
-
-      const during = Array.from({ length: 7 }, () => market.step());
+      const during = [market.step(), market.step()];
       for (const tick of during) expect(tick.events).toEqual([event]);
       for (const tick of during) expect(Object.isFrozen(tick.events)).toBe(true);
-      const after = Array.from({ length: 20 }, () => market.step());
+      const after = Array.from({ length: 30 }, () => market.step());
       for (const tick of after) expect("events" in tick).toBe(false);
       expect("events" in before).toBe(false);
-
-      const loss = 1 - during.at(-1)!.prices[RISKY] / before.prices[RISKY];
-      expect(loss).toBeGreaterThan(0.05);
-      expect(loss).toBeLessThan(0.45);
-      losses.push(loss);
+      for (const id of [RISKY, MODERATE, CONSERVATIVE]) {
+        moves[id].push(during.at(-1)!.prices[id] / before.prices[id] - 1);
+      }
+      // Against the same market without the event.
+      const [crash, weeks] = eventEffect(seed, "send-deepseek", [2, 23]);
+      expect(crash![CONSERVATIVE]).toBe(0);
+      recovered.push(1 - weeks![RISKY] / crash![RISKY]);
     }
-    expect(median(losses)).toBeGreaterThan(0.14);
-    expect(median(losses)).toBeLessThan(0.3);
+    const [risky, moderate, conservative] = [moves[RISKY], moves[MODERATE], moves[CONSERVATIVE]];
+    // Andes' own swings blur single seeds; most land in the headline's range.
+    expect(Math.max(...risky)).toBeLessThan(-0.03);
+    expect(Math.min(...risky)).toBeGreaterThan(-0.4);
+    expect(risky.filter((move) => move < -0.08 && move > -0.3).length).toBeGreaterThan(
+      0.8 * risky.length,
+    );
+    expect(median(risky)).toBeLessThan(-0.13);
+    expect(median(risky)).toBeGreaterThan(-0.21);
+    expect(median(moderate)).toBeLessThan(-0.005);
+    expect(median(moderate)).toBeGreaterThan(-0.04);
+    expect(Math.abs(median(conservative))).toBeLessThan(0.003);
+    expect(median(recovered)).toBeGreaterThan(0.35);
+    expect(median(recovered)).toBeLessThan(0.55);
+    console.log("send-deepseek 2-day return", summarize(moves));
+    console.log("send-deepseek share of Andes' loss won back 3 weeks later", {
+      [RISKY]: summarize({ [RISKY]: recovered } as Record<FundId, number[]>)[RISKY],
+    });
   });
 
-  it("extends a running spy event instead of stacking it", () => {
-    const market = createMarket(5);
-    for (let i = 0; i < WINDOW; i++) market.step();
-    const first = market.trigger("send-spy");
-    market.step();
-    market.step();
-    const second = market.trigger("send-spy");
-    market.trigger("send-spy");
-    const third = market.trigger("send-spy");
-    expect(third.startedAt).toBe(first.startedAt);
-    expect(third.endsAt).toBe(second.endsAt);
-    expect(third.endsAt).toBe(market.now() + 8 * DAY_MS);
-    const ticks = Array.from({ length: 10 }, () => market.step());
-    expect(ticks.filter((tick) => tick.events).length).toBe(7);
-  });
-
-  it("send-moon inflates every fund by risk for 7 days", () => {
-    const gains = { [RISKY]: [], [MODERATE]: [], [CONSERVATIVE]: [] } as Record<FundId, number[]>;
-    const kepts = { [RISKY]: [], [MODERATE]: [], [CONSERVATIVE]: [] } as Record<FundId, number[]>;
+  it("send-nvidia lifts Andes 15–25% over 2 days, with momentum and a small give-back", () => {
+    const moves = emptyByFund();
+    const momentum: number[] = [];
+    const kept: number[] = [];
     for (const seed of MANY_SEEDS) {
-      const { before, during, after } = runEvent(seed, "send-moon", 7, 60);
-      expect(during.every((tick) => tick.events?.[0]?.kind === "send-moon")).toBe(true);
+      const { before, during, after } = runEvent(seed, "send-nvidia", 2, 60);
+      expect(during.every((tick) => tick.events?.[0]?.kind === "send-nvidia")).toBe(true);
       expect(during[0]!.events![0]!.fundId).toBeUndefined();
       expect(after.every((tick) => !tick.events)).toBe(true);
       for (const id of [RISKY, MODERATE, CONSERVATIVE]) {
-        gains[id].push(during.at(-1)!.prices[id] / before.prices[id] - 1);
+        moves[id].push(during.at(-1)!.prices[id] / before.prices[id] - 1);
       }
-      // Against the same market without the event: a partial correction, not a
-      // full reversal, three weeks after the end.
-      const effect = eventEffect(seed, "send-moon", [7, 28]);
-      for (const id of [RISKY, MODERATE, CONSERVATIVE]) {
-        const [peak, later] = effect.map((day) => day[id]);
-        kepts[id].push(later! / peak!);
-      }
-      // Andes' own swings (and their GARCH echo) blur its counterfactual, so it is
-      // only checked on the median below.
-      const [peak, later] = effect.map((day) => day[CONSERVATIVE]!);
-      expect(later!).toBeGreaterThan(0.3 * peak!);
-      expect(later!).toBeLessThan(0.95 * peak!);
+      const [jump, peak, later] = eventEffect(seed, "send-nvidia", [2, 7, 37]);
+      expect(jump![CONSERVATIVE]).toBe(0);
+      momentum.push(peak![RISKY] / jump![RISKY]);
+      kept.push(later![RISKY] / peak![RISKY]);
     }
-    for (const id of [RISKY, MODERATE, CONSERVATIVE]) {
-      expect(median(kepts[id])).toBeGreaterThan(0.45);
-      expect(median(kepts[id])).toBeLessThan(0.85);
-    }
-    const [risky, moderate, conservative] = [gains[RISKY], gains[MODERATE], gains[CONSERVATIVE]];
-    // Andes' own jumps can wipe out or double a single week; the median is the
-    // event's signature.
-    expect(Math.min(...risky)).toBeGreaterThan(-0.05);
-    expect(Math.max(...risky)).toBeLessThan(0.6);
-    expect(median(risky)).toBeGreaterThan(0.22);
-    expect(median(risky)).toBeLessThan(0.38);
-    expect(Math.min(...moderate)).toBeGreaterThan(0.03);
-    expect(Math.max(...moderate)).toBeLessThan(0.13);
-    expect(Math.min(...conservative)).toBeGreaterThan(0.005);
-    expect(Math.max(...conservative)).toBeLessThan(0.03);
-    console.log("send-moon 7-day return", summarize(gains));
-    console.log("send-moon share kept 3 weeks later", summarize(kepts));
+    const [risky, moderate, conservative] = [moves[RISKY], moves[MODERATE], moves[CONSERVATIVE]];
+    // Andes' own swings blur single seeds; most land in the headline's range.
+    expect(Math.min(...risky)).toBeGreaterThan(-0.15);
+    expect(Math.max(...risky)).toBeLessThan(0.45);
+    expect(risky.filter((move) => move > 0.08 && move < 0.35).length).toBeGreaterThan(
+      0.8 * risky.length,
+    );
+    expect(median(risky)).toBeGreaterThan(0.15);
+    expect(median(risky)).toBeLessThan(0.25);
+    expect(median(moderate)).toBeGreaterThan(0.015);
+    expect(median(moderate)).toBeLessThan(0.045);
+    expect(Math.abs(median(conservative))).toBeLessThan(0.003);
+    // The euphoria runs on for a few days, then only a small part is given back.
+    expect(median(momentum)).toBeGreaterThan(1.03);
+    expect(median(kept)).toBeGreaterThan(0.7);
+    expect(median(kept)).toBeLessThan(0.95);
+    console.log("send-nvidia 2-day return", summarize(moves));
+    console.log("send-nvidia on Andes vs the same market without it", {
+      "day 7 / day 2": summarize({ [RISKY]: momentum } as Record<FundId, number[]>)[RISKY],
+      "day 37 / day 7": summarize({ [RISKY]: kept } as Record<FundId, number[]>)[RISKY],
+    });
   });
 
-  it("send-retiro sinks the conservative fund for 14 days, barely touching Andes", () => {
-    const moves = { [RISKY]: [], [MODERATE]: [], [CONSERVATIVE]: [] } as Record<FundId, number[]>;
+  it("send-afp sinks the conservative fund for 14 days, barely touching Andes", () => {
+    const moves = emptyByFund();
     const recovery: number[] = [];
     const volRatios: number[] = [];
     for (const seed of MANY_SEEDS) {
-      const { before, during, after } = runEvent(seed, "send-retiro", 14, 60);
+      const { before, during, after } = runEvent(seed, "send-afp", 14, 60);
       expect(during.length).toBe(14);
       expect(during.every((tick) => tick.events?.[0]?.fundId === CONSERVATIVE)).toBe(true);
       expect(after.every((tick) => !tick.events)).toBe(true);
@@ -295,7 +397,7 @@ describe("market simulation", () => {
       }
       // Against the same market without the event: a slow, partial recovery,
       // still well below one and two months after the end.
-      const [loss, month, twoMonths] = eventEffect(seed, "send-retiro", [14, 44, 74]).map(
+      const [loss, month, twoMonths] = eventEffect(seed, "send-afp", [14, 44, 74]).map(
         (day) => day[CONSERVATIVE],
       );
       expect(month! / loss!).toBeGreaterThan(0.45);
@@ -313,14 +415,14 @@ describe("market simulation", () => {
     expect(Math.max(...conservative)).toBeLessThan(-0.04);
     expect(median(conservative)).toBeLessThan(-0.055);
     expect(median(conservative)).toBeGreaterThan(-0.075);
-    expect(Math.min(...moderate)).toBeGreaterThan(-0.065);
-    expect(Math.max(...moderate)).toBeLessThan(0.01);
+    expect(Math.min(...moderate)).toBeGreaterThan(-0.07);
+    expect(Math.max(...moderate)).toBeLessThan(0.02);
     expect(median(moderate)).toBeLessThan(-0.01);
-    expect(median(moderate)).toBeGreaterThan(-0.03);
+    expect(median(moderate)).toBeGreaterThan(-0.035);
     // Andes keeps its usual dynamics: no systematic move.
     expect(Math.abs(median(risky))).toBeLessThan(0.05);
-    console.log("send-retiro 14-day return", summarize(moves));
-    console.log("send-retiro share of the loss recovered 2 months later", {
+    console.log("send-afp 14-day return", summarize(moves));
+    console.log("send-afp share of the loss recovered 2 months later", {
       [CONSERVATIVE]: summarize({ [CONSERVATIVE]: recovery } as Record<FundId, number[]>)[
         CONSERVATIVE
       ],
@@ -328,27 +430,45 @@ describe("market simulation", () => {
     });
   });
 
+  it("extends a running event instead of stacking it", () => {
+    const market = createMarket(5);
+    for (let i = 0; i < WINDOW; i++) market.step();
+    const first = market.trigger("send-deepseek");
+    market.step();
+    market.step();
+    const second = market.trigger("send-deepseek");
+    market.trigger("send-deepseek");
+    const third = market.trigger("send-deepseek");
+    expect(third.startedAt).toBe(first.startedAt);
+    expect(third.endsAt).toBe(second.endsAt);
+    expect(third.endsAt).toBe(market.now() + 3 * DAY_MS);
+    const ticks = Array.from({ length: 10 }, () => market.step());
+    expect(ticks.filter((tick) => tick.events).length).toBe(2);
+  });
+
   it("lists overlapping kinds together, each with its own period", () => {
     const market = createMarket(11);
     for (let i = 0; i < WINDOW; i++) market.step();
-    const moon = market.trigger("send-moon");
-    market.step();
-    market.step();
-    const retiro = market.trigger("send-retiro");
-    const spy = market.trigger("send-spy");
-    const ticks = Array.from({ length: 20 }, () => market.step());
-    // The moon started two days earlier; the spy and the retiro start now, and
-    // everything is listed in kind order.
-    for (const tick of ticks.slice(0, 5)) expect(tick.events).toEqual([spy, moon, retiro]);
-    expect(ticks[5]!.events).toEqual([spy, retiro]);
-    expect(ticks[6]!.events).toEqual([spy, retiro]);
-    for (const tick of ticks.slice(7, 14)) expect(tick.events).toEqual([retiro]);
+    const afp = market.trigger("send-afp");
+    const ticks = [market.step()];
+    const deepseek = market.trigger("send-deepseek");
+    ticks.push(market.step());
+    const nvidia = market.trigger("send-nvidia");
+    ticks.push(...Array.from({ length: 18 }, () => market.step()));
+    // The AFP withdrawal started two days earlier, DeepSeek one; everything is
+    // listed in kind order.
+    expect(ticks[0]!.events).toEqual([afp]);
+    expect(ticks[1]!.events).toEqual([deepseek, afp]);
+    expect(ticks[2]!.events).toEqual([deepseek, nvidia, afp]);
+    expect(ticks[3]!.events).toEqual([nvidia, afp]);
+    for (const tick of ticks.slice(4, 14)) expect(tick.events).toEqual([afp]);
     for (const tick of ticks.slice(14)) expect("events" in tick).toBe(false);
-    expect(moon.fundId).toBeUndefined();
-    expect(retiro.fundId).toBe(CONSERVATIVE);
+    expect(nvidia.fundId).toBeUndefined();
+    expect(deepseek.fundId).toBe(RISKY);
+    expect(afp.fundId).toBe(CONSERVATIVE);
     // The same array is reused while the active set does not change.
-    expect(ticks[2]!.events).toBe(ticks[1]!.events);
-    expect(Object.isFrozen(ticks[0]!.events)).toBe(true);
+    expect(ticks[5]!.events).toBe(ticks[4]!.events);
+    expect(Object.isFrozen(ticks[2]!.events)).toBe(true);
     for (const tick of ticks) {
       for (const event of tick.events ?? []) {
         expect(tick.t).toBeGreaterThanOrEqual(event.startedAt);
@@ -359,7 +479,7 @@ describe("market simulation", () => {
 
   it("re-triggering any kind extends it without stacking its move", () => {
     for (const kind of MARKET_EVENT_KINDS) {
-      const days = kind === "send-retiro" ? 14 : 7;
+      const days = EVENT_DAYS[kind];
       const singles: number[] = [];
       const spammed: number[] = [];
       for (const seed of SEEDS) {
@@ -371,19 +491,17 @@ describe("market simulation", () => {
         for (let i = 0; i < WINDOW; i++) market.step();
         const before = market.step();
         const first = market.trigger(kind);
-        let last = before;
         for (let i = 0; i < 4; i++) {
-          last = market.step();
+          market.step();
           market.trigger(kind);
           market.trigger(kind);
         }
         const ticks: PriceTick[] = [];
         for (let tick = market.step(); tick.events; tick = market.step()) ticks.push(tick);
-        last = ticks.at(-1)!;
         expect(ticks.every((tick) => tick.events!.length === 1)).toBe(true);
         expect(ticks[0]!.events![0]!.startedAt).toBe(first.startedAt);
         expect(ticks.length).toBe(days);
-        spammed.push(Math.log(last.prices[fund] / before.prices[fund]));
+        spammed.push(Math.log(ticks.at(-1)!.prices[fund] / before.prices[fund]));
       }
       // One event's worth of move, not five.
       expect(Math.abs(median(spammed))).toBeLessThan(1.75 * Math.abs(median(singles)));
@@ -438,15 +556,28 @@ describe("market simulation", () => {
     const returns = Object.fromEntries(
       FUNDS.map((fund) => [fund.id, logReturns(series(ticks, fund.id))]),
     ) as Record<FundId, number[]>;
-    const spyLosses = SEEDS.map((seed) => {
-      const market = createMarket(seed);
-      for (let i = 0; i < WINDOW; i++) market.step();
-      const before = market.step().prices[RISKY];
-      market.trigger("send-spy");
-      let last = before;
-      for (let i = 0; i < 7; i++) last = market.step().prices[RISKY];
-      return `${((last / before - 1) * 100).toFixed(1)}%`;
-    });
+    const trend = Object.fromEntries(
+      FUNDS.map((fund) => {
+        const values = SEEDS.map((seed) => trendStats(series(run(seed, 20 * 365), fund.id), seed));
+        const fmt = (key: "trend" | "iid", stat: "autocorrelation" | "varianceRatio") =>
+          mean(values.map((value) => value[key][stat])).toFixed(2);
+        return [
+          fund.name,
+          `10d autocorr ${fmt("trend", "autocorrelation")} (i.i.d. ${fmt("iid", "autocorrelation")}) · ` +
+            `60d variance ratio ${fmt("trend", "varianceRatio")} (i.i.d. ${fmt("iid", "varianceRatio")})`,
+        ];
+      }),
+    );
+    const eventMoves = Object.fromEntries(
+      MARKET_EVENT_KINDS.map((kind) => {
+        const fund = kind === "send-afp" ? CONSERVATIVE : RISKY;
+        const moves = SEEDS.map((seed) => {
+          const { before, during } = runEvent(seed, kind, EVENT_DAYS[kind], 0);
+          return `${((during.at(-1)!.prices[fund] / before.prices[fund] - 1) * 100).toFixed(1)}%`;
+        });
+        return [`${kind} (${fund}, ${EVENT_DAYS[kind]}d)`, moves.join(", ")];
+      }),
+    );
     console.log({
       "corr risky/moderate": correlation(returns[RISKY], returns[MODERATE]).toFixed(2),
       "corr risky/conservative": correlation(returns[RISKY], returns[CONSERVATIVE]).toFixed(2),
@@ -456,7 +587,8 @@ describe("market simulation", () => {
       "abs-return lag-1 autocorrelation (risky)": absReturnAutocorrelation(
         series(ticks, RISKY),
       ).toFixed(2),
-      "send-spy 7-day return per seed": spyLosses.join(", "),
     });
+    console.log("trend persistence over 20 years, mean of seeds", trend);
+    console.log("event move per seed", eventMoves);
   });
 });
