@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { createMemo, createSignal, createStore, For, Loading, onSettled, Show } from "solid-js";
 import "./app.css";
-import { PortfolioChart } from "./components/chart/PortfolioChart";
+import { PortfolioChart, type SeriesPoint } from "./components/chart/PortfolioChart";
 import { getPriceHistory, livePrices } from "./market/api";
 import {
   CASH_COLOR,
@@ -45,42 +45,61 @@ const RISK_LABEL: Record<RiskLevel, string> = {
 const styles = stylex.create({
   page: {
     minHeight: "100vh",
+    display: "grid",
+    gridTemplateColumns: {
+      default: "1fr",
+      "@media (min-width: 1200px)": "minmax(700px, 46%) minmax(0, 1fr)",
+    },
     backgroundColor: "#f6f8f6",
     color: "#2f3b36",
     fontFamily: "system-ui, sans-serif",
   },
-  main: { maxWidth: 1440, marginInline: "auto", padding: 24 },
-  header: {
+  sidebar: {
+    backgroundColor: "#ffffff",
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: "#e3e8e4",
+    padding: 24,
+    minWidth: 0,
+  },
+  brand: {
     display: "flex",
-    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 10,
+    margin: "0 0 28px",
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#3f6f5a",
+  },
+  brandIcon: { width: 30, height: 30, flexShrink: 0 },
+  workspace: { minWidth: 0, display: "flex", flexDirection: "column" },
+  topbar: {
+    display: "flex",
+    flexWrap: "nowrap",
     gap: 16,
     alignItems: "flex-end",
     justifyContent: "space-between",
-    marginBottom: 20,
+    paddingBlock: 20,
+    paddingInline: 28,
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: "#e3e8e4",
   },
-  eyebrow: { margin: 0, color: "#3f6f5a", fontWeight: 600, fontSize: 13 },
-  title: { margin: "4px 0 0", fontSize: 26 },
-  clock: { textAlign: "right", color: "#6b7a72", fontSize: 13, lineHeight: 1.5 },
-  clockDate: { color: "#2f3b36", fontSize: 16, fontWeight: 600 },
-  layout: {
-    display: "grid",
-    gap: 20,
-    alignItems: "start",
-    gridTemplateColumns: {
-      default: "1fr",
-      "@media (min-width: 1360px)": "minmax(680px, 1fr) minmax(0, 1.2fr)",
-    },
+  topTitle: { margin: 0, fontSize: 18 },
+  clock: { margin: "6px 0 0", color: "#6b7a72", fontSize: 13, lineHeight: 1.5 },
+  topInfo: { minWidth: 0 },
+  valuation: { textAlign: "right", flexShrink: 0 },
+  valuationLabel: { color: "#6b7a72", fontSize: 13 },
+  valuationAmount: {
+    fontSize: 32,
+    fontWeight: 700,
+    fontVariantNumeric: "tabular-nums",
+    lineHeight: 1.2,
   },
-  panel: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: "#e3e8e4",
-    borderRadius: 12,
-    padding: 20,
-    minWidth: 0,
-  },
-  section: { marginTop: 24 },
+  up: { color: "#2f7d55", fontSize: 13, fontWeight: 600 },
+  down: { color: "#b4493f", fontSize: 13, fontWeight: 600 },
+  chartArea: { padding: 28, minWidth: 0 },
+  section: { marginTop: 28 },
   h2: { margin: "0 0 12px", fontSize: 18 },
   tableScroll: { overflowX: "auto" },
   table: {
@@ -171,15 +190,11 @@ export default function App() {
     setRunning(true);
   });
   return (
-    <div {...stylex.attrs(styles.page)}>
-      <main {...stylex.attrs(styles.main)}>
-        <Show when={running()} fallback={<p {...stylex.attrs(styles.loading)}>Cargando…</p>}>
-          <Loading fallback={<p {...stylex.attrs(styles.loading)}>Conectando al mercado…</p>}>
-            <Dashboard />
-          </Loading>
-        </Show>
-      </main>
-    </div>
+    <Show when={running()} fallback={<p {...stylex.attrs(styles.loading)}>Cargando…</p>}>
+      <Loading fallback={<p {...stylex.attrs(styles.loading)}>Conectando al mercado…</p>}>
+        <Dashboard />
+      </Loading>
+    </Show>
   );
 }
 
@@ -274,179 +289,203 @@ function Dashboard() {
 
   const day = () => Math.floor((tick().t - timeline().startedAt) / DAY_MS);
 
+  // Top-right valuation: the live total, or the chart sample under the pointer.
+  const [hovered, setHovered] = createSignal<SeriesPoint | undefined>(undefined);
+  const shownValue = () => hovered()?.total ?? total();
+  const change = () => (shownValue() / INITIAL_CAPITAL_CLP - 1) * 100;
+
   return (
-    <>
-      <header {...stylex.attrs(styles.header)}>
-        <div>
-          <p {...stylex.attrs(styles.eyebrow)}>Solid 2 · Mercado en tiempo real</p>
-          <h1 {...stylex.attrs(styles.title)}>Portafolio · {money.format(total())}</h1>
-        </div>
-        <div {...stylex.attrs(styles.clock)}>
-          <div {...stylex.attrs(styles.clockDate)}>{simDate.format(tick().t)}</div>
-          <div>
-            Día {day()} desde que llegaste · 4 h simuladas por segundo · mismos precios para todos
-          </div>
-        </div>
-      </header>
-
-      <div {...stylex.attrs(styles.layout)}>
-        <section {...stylex.attrs(styles.panel)} aria-label="Distribución">
-          <h2 {...stylex.attrs(styles.h2)}>Stocks</h2>
-          <div {...stylex.attrs(styles.tableScroll)}>
-            <table {...stylex.attrs(styles.table)}>
-              <thead>
-                <tr>
-                  <th {...stylex.attrs(styles.th, styles.left)}>Fondo</th>
-                  <th {...stylex.attrs(styles.th)}>Cuotas</th>
-                  <th {...stylex.attrs(styles.th)}>Precio</th>
-                  <th {...stylex.attrs(styles.th)}>Valorización</th>
-                  <th {...stylex.attrs(styles.th)}>% actual</th>
-                  <th {...stylex.attrs(styles.th)}>% objetivo</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={FUNDS}>
-                  {(fund) => (
-                    <tr>
-                      <td {...stylex.attrs(styles.td, styles.left)}>
-                        <span {...stylex.attrs(styles.fund)}>
-                          <Swatch color={fund.color} />
-                          <span>
-                            {fund.name}
-                            <span {...stylex.attrs(styles.risk)}>{RISK_LABEL[fund.risk]}</span>
-                          </span>
+    <div {...stylex.attrs(styles.page)}>
+      <aside {...stylex.attrs(styles.sidebar)} aria-label="Distribución">
+        <p {...stylex.attrs(styles.brand)}>
+          <MokaIcon />
+          Moka Portafolio
+        </p>
+        <h2 {...stylex.attrs(styles.h2)}>Stocks</h2>
+        <div {...stylex.attrs(styles.tableScroll)}>
+          <table {...stylex.attrs(styles.table)}>
+            <thead>
+              <tr>
+                <th {...stylex.attrs(styles.th, styles.left)}>Fondo</th>
+                <th {...stylex.attrs(styles.th)}>Cuotas</th>
+                <th {...stylex.attrs(styles.th)}>Precio</th>
+                <th {...stylex.attrs(styles.th)}>Valorización</th>
+                <th {...stylex.attrs(styles.th)}>% actual</th>
+                <th {...stylex.attrs(styles.th)}>% objetivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={FUNDS}>
+                {(fund) => (
+                  <tr>
+                    <td {...stylex.attrs(styles.td, styles.left)}>
+                      <span {...stylex.attrs(styles.fund)}>
+                        <Swatch color={fund.color} />
+                        <span>
+                          {fund.name}
+                          <span {...stylex.attrs(styles.risk)}>{RISK_LABEL[fund.risk]}</span>
                         </span>
-                      </td>
-                      <td {...stylex.attrs(styles.td)}>
-                        {integer.format(portfolio().shares(fund.id))}
-                      </td>
-                      <td {...stylex.attrs(styles.td)}>{money.format(prices()[fund.id])}</td>
-                      <td {...stylex.attrs(styles.td)}>
-                        {money.format(portfolio().shares(fund.id) * prices()[fund.id])}
-                      </td>
-                      <td {...stylex.attrs(styles.td)}>
-                        {percent.format(allocation()[fund.id])} %
-                      </td>
-                      <td {...stylex.attrs(styles.td)}>
-                        <input
-                          {...stylex.attrs(styles.input)}
-                          type="number"
-                          inputmode="decimal"
-                          min="0"
-                          max="100"
-                          step="1"
-                          aria-label={`% objetivo de ${fund.name}`}
-                          value={targets[fund.id]}
-                          onInput={(event) => {
-                            const value = event.currentTarget.value;
-                            setTargets((draft) => {
-                              draft[fund.id] = value;
-                            });
-                          }}
-                        />{" "}
-                        %
-                      </td>
-                    </tr>
-                  )}
-                </For>
-                <tr>
-                  <td {...stylex.attrs(styles.td, styles.left)}>
-                    <span {...stylex.attrs(styles.fund)}>
-                      <Swatch color={CASH_COLOR} />
-                      <span>
-                        Caja
-                        <span {...stylex.attrs(styles.risk)}>Lo que no alcanza para una cuota</span>
                       </span>
+                    </td>
+                    <td {...stylex.attrs(styles.td)}>
+                      {integer.format(portfolio().shares(fund.id))}
+                    </td>
+                    <td {...stylex.attrs(styles.td)}>{money.format(prices()[fund.id])}</td>
+                    <td {...stylex.attrs(styles.td)}>
+                      {money.format(portfolio().shares(fund.id) * prices()[fund.id])}
+                    </td>
+                    <td {...stylex.attrs(styles.td)}>{percent.format(allocation()[fund.id])} %</td>
+                    <td {...stylex.attrs(styles.td)}>
+                      <input
+                        {...stylex.attrs(styles.input)}
+                        type="number"
+                        inputmode="decimal"
+                        min="0"
+                        max="100"
+                        step="1"
+                        aria-label={`% objetivo de ${fund.name}`}
+                        value={targets[fund.id]}
+                        onInput={(event) => {
+                          const value = event.currentTarget.value;
+                          setTargets((draft) => {
+                            draft[fund.id] = value;
+                          });
+                        }}
+                      />{" "}
+                      %
+                    </td>
+                  </tr>
+                )}
+              </For>
+              <tr>
+                <td {...stylex.attrs(styles.td, styles.left)}>
+                  <span {...stylex.attrs(styles.fund)}>
+                    <Swatch color={CASH_COLOR} />
+                    <span>
+                      Caja
+                      <span {...stylex.attrs(styles.risk)}>Lo que no alcanza para una cuota</span>
                     </span>
-                  </td>
-                  <td {...stylex.attrs(styles.td, styles.muted)}>—</td>
-                  <td {...stylex.attrs(styles.td, styles.muted)}>—</td>
-                  <td {...stylex.attrs(styles.td)}>{money.format(portfolio().cash.shares)}</td>
-                  <td {...stylex.attrs(styles.td)}>{percent.format(allocation()[CASH_ID])} %</td>
-                  <td {...stylex.attrs(styles.td, styles.muted)}>0 %</td>
-                </tr>
-                <tr>
-                  <td {...stylex.attrs(styles.td, styles.left, styles.footer)}>Total</td>
-                  <td {...stylex.attrs(styles.td, styles.footer)} />
-                  <td {...stylex.attrs(styles.td, styles.footer)} />
-                  <td {...stylex.attrs(styles.td, styles.footer)}>{money.format(total())}</td>
-                  <td {...stylex.attrs(styles.td, styles.footer)}>100 %</td>
-                  <td {...stylex.attrs(styles.td, styles.footer)}>
-                    {percent.format(targetSum())} %
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <Show when={error()}>
-            {(value) => <p {...stylex.attrs(styles.error)}>{describeError(value())}</p>}
-          </Show>
+                  </span>
+                </td>
+                <td {...stylex.attrs(styles.td, styles.muted)}>—</td>
+                <td {...stylex.attrs(styles.td, styles.muted)}>—</td>
+                <td {...stylex.attrs(styles.td)}>{money.format(portfolio().cash.shares)}</td>
+                <td {...stylex.attrs(styles.td)}>{percent.format(allocation()[CASH_ID])} %</td>
+                <td {...stylex.attrs(styles.td, styles.muted)}>0 %</td>
+              </tr>
+              <tr>
+                <td {...stylex.attrs(styles.td, styles.left, styles.footer)}>Total</td>
+                <td {...stylex.attrs(styles.td, styles.footer)} />
+                <td {...stylex.attrs(styles.td, styles.footer)} />
+                <td {...stylex.attrs(styles.td, styles.footer)}>{money.format(total())}</td>
+                <td {...stylex.attrs(styles.td, styles.footer)}>100 %</td>
+                <td {...stylex.attrs(styles.td, styles.footer)}>{percent.format(targetSum())} %</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <Show when={error()}>
+          {(value) => <p {...stylex.attrs(styles.error)}>{describeError(value())}</p>}
+        </Show>
 
-          <div {...stylex.attrs(styles.section)}>
-            <h2 {...stylex.attrs(styles.h2)}>Cambios</h2>
-            <Show
-              when={plan()}
-              fallback={
-                <p {...stylex.attrs(styles.hint)}>Ajusta los % objetivo para ver los cambios.</p>
-              }
+        <div {...stylex.attrs(styles.section)}>
+          <h2 {...stylex.attrs(styles.h2)}>Cambios</h2>
+          <Show
+            when={plan()}
+            fallback={
+              <p {...stylex.attrs(styles.hint)}>Ajusta los % objetivo para ver los cambios.</p>
+            }
+          >
+            {(current) => (
+              <>
+                <div {...stylex.attrs(styles.tableScroll)}>
+                  <table {...stylex.attrs(styles.table)}>
+                    <thead>
+                      <tr>
+                        <th {...stylex.attrs(styles.th, styles.left)}>Fondo</th>
+                        <th {...stylex.attrs(styles.th, styles.left)}>Acción</th>
+                        <th {...stylex.attrs(styles.th)}>Cuotas</th>
+                        <th {...stylex.attrs(styles.th)}>Monto</th>
+                        <th {...stylex.attrs(styles.th)}>Resultado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <For each={current().diffs} keyed={(diff: StockDiff) => diff.stockId}>
+                        {(diff) => <DiffRow diff={diff()} />}
+                      </For>
+                    </tbody>
+                  </table>
+                </div>
+                <p {...stylex.attrs(styles.hint)}>
+                  Solo cuotas enteras, sin comisiones: las ventas financian las compras y lo que no
+                  alcanza para una cuota queda en caja. Los montos se recalculan con cada precio que
+                  llega del servidor.
+                </p>
+              </>
+            )}
+          </Show>
+          <div {...stylex.attrs(styles.actions)}>
+            <button
+              type="button"
+              {...stylex.attrs(styles.button)}
+              disabled={!plan() || plan()!.isEmpty}
+              onClick={rebalance}
             >
-              {(current) => (
-                <>
-                  <div {...stylex.attrs(styles.tableScroll)}>
-                    <table {...stylex.attrs(styles.table)}>
-                      <thead>
-                        <tr>
-                          <th {...stylex.attrs(styles.th, styles.left)}>Fondo</th>
-                          <th {...stylex.attrs(styles.th, styles.left)}>Acción</th>
-                          <th {...stylex.attrs(styles.th)}>Cuotas</th>
-                          <th {...stylex.attrs(styles.th)}>Monto</th>
-                          <th {...stylex.attrs(styles.th)}>Resultado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <For each={current().diffs} keyed={(diff: StockDiff) => diff.stockId}>
-                          {(diff) => <DiffRow diff={diff()} />}
-                        </For>
-                      </tbody>
-                    </table>
-                  </div>
-                  <p {...stylex.attrs(styles.hint)}>
-                    Solo cuotas enteras, sin comisiones: las ventas financian las compras y lo que
-                    no alcanza para una cuota queda en caja. Los montos se recalculan con cada
-                    precio que llega del servidor.
-                  </p>
-                </>
-              )}
-            </Show>
-            <div {...stylex.attrs(styles.actions)}>
-              <button
-                type="button"
-                {...stylex.attrs(styles.button)}
-                disabled={!plan() || plan()!.isEmpty}
-                onClick={rebalance}
-              >
-                Rebalancear
-              </button>
-              <button type="button" {...stylex.attrs(styles.secondary)} onClick={useCurrent}>
-                Usar % actual
-              </button>
-              <button type="button" {...stylex.attrs(styles.secondary)} onClick={resetTargets}>
-                Plan inicial
-              </button>
-              <span {...stylex.attrs(styles.muted)}>
-                {timeline().changes.length === 1
-                  ? "1 rebalanceo"
-                  : `${timeline().changes.length} rebalanceos`}
-              </span>
+              Rebalancear
+            </button>
+            <button type="button" {...stylex.attrs(styles.secondary)} onClick={useCurrent}>
+              Usar % actual
+            </button>
+            <button type="button" {...stylex.attrs(styles.secondary)} onClick={resetTargets}>
+              Plan inicial
+            </button>
+            <span {...stylex.attrs(styles.muted)}>
+              {timeline().changes.length === 1
+                ? "1 rebalanceo"
+                : `${timeline().changes.length} rebalanceos`}
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      <main {...stylex.attrs(styles.workspace)}>
+        <header {...stylex.attrs(styles.topbar)}>
+          <div {...stylex.attrs(styles.topInfo)}>
+            <h1 {...stylex.attrs(styles.topTitle)}>Evolución del portafolio</h1>
+            <p {...stylex.attrs(styles.clock)}>
+              {simDate.format(tick().t)} · día {day()} desde que llegaste · 1 día simulado cada 6 s
+              · mismos precios para todos
+            </p>
+          </div>
+          <div {...stylex.attrs(styles.valuation)} aria-live="polite">
+            <div {...stylex.attrs(styles.valuationLabel)}>
+              {hovered()
+                ? `Valorización al ${simDate.format(hovered()!.t)}`
+                : "Valorización actual"}
+            </div>
+            <div {...stylex.attrs(styles.valuationAmount)}>{money.format(shownValue())}</div>
+            <div {...(change() >= -0.05 ? stylex.attrs(styles.up) : stylex.attrs(styles.down))}>
+              {change() >= -0.05 ? "▲" : "▼"} {percent.format(Math.abs(change()))} % vs. capital
+              inicial
             </div>
           </div>
-        </section>
+        </header>
+        <div {...stylex.attrs(styles.chartArea)}>
+          <PortfolioChart ticks={ticks()} timeline={timeline()} onHover={setHovered} />
+        </div>
+      </main>
+    </div>
+  );
+}
 
-        <section {...stylex.attrs(styles.panel)}>
-          <PortfolioChart ticks={ticks()} timeline={timeline()} />
-        </section>
-      </div>
-    </>
+function MokaIcon() {
+  return (
+    <svg {...stylex.attrs(styles.brandIcon)} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="m7.025 11.825l.825-1.7q.25-.525.738-.825T9.65 9H11V2h7l-1 2l1 2h-5v3h1.275q.575 0 1.038.3t.737.8l.875 1.75l-3 2L12 12.875l-1.925.975zM2 22l4.125-8.375l3.8 2.525L12 15.125l2.075 1.025l3.75-2.475L22 22z"
+      />
+    </svg>
   );
 }
 
