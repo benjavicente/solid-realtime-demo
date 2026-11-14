@@ -11,6 +11,9 @@ declare module "@solidjs/web/jsx-runtime" {
   }
 }
 
+const SUBTLE: EffectTiming = { duration: 280, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+const FADE: EffectTiming = { duration: 160, easing: "ease-out" };
+
 export interface AnimatedNumberProps {
   readonly value: number;
   /** Intl options; read once when the element is created. */
@@ -38,6 +41,11 @@ export function AnimatedNumber(props: AnimatedNumberProps) {
         el.locales = "es-CL";
         el.format = props.format;
         el.numberSuffix = props.suffix;
+        // Short, eased transitions so live prices drift instead of spinning.
+        el.transformTiming = SUBTLE;
+        el.spinTiming = SUBTLE;
+        el.opacityTiming = FADE;
+        el.trend = 0;
       }}
     />
   );
