@@ -358,10 +358,9 @@ function Dashboard() {
                 <td {...stylex.attrs(styles.td)}>
                   <Money value={portfolio().cash.shares} />
                 </td>
-                <td {...stylex.attrs(styles.td)}>
-                  <Percent value={allocation()[CASH_ID]} />
-                </td>
-                <td {...stylex.attrs(styles.td, styles.muted)}>0 %</td>
+                {/* Cash has no target: it only holds what whole shares can't absorb. */}
+                <td {...stylex.attrs(styles.td)} />
+                <td {...stylex.attrs(styles.td)} />
               </tr>
               <tr>
                 <td {...stylex.attrs(styles.td, styles.left, styles.footer)}>Total</td>
@@ -521,8 +520,13 @@ function DiffRow(props: { diff: StockDiff }) {
         )}
       </td>
       <td {...stylex.attrs(styles.td)}>
-        <Percent value={props.diff.resultingPercent} />
-        <span {...stylex.attrs(styles.muted)}> / {percent.format(props.diff.targetPercent)} %</span>
+        <Show when={!isCash()}>
+          <Percent value={props.diff.resultingPercent} />
+          <span {...stylex.attrs(styles.muted)}>
+            {" "}
+            / {percent.format(props.diff.targetPercent)} %
+          </span>
+        </Show>
       </td>
     </tr>
   );
