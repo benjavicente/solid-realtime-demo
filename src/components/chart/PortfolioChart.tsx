@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
 import type { PriceTick } from "../../market/types";
 import type { PortfolioTimeline } from "../../portfolio";
-import { buildGeometry, FRAME, LAYERS } from "./geometry";
+import { buildGeometry, FRAME } from "./geometry";
 import { buildSeries, type SeriesPoint } from "./series";
 
 export { buildSeries, type SeriesPoint } from "./series";
@@ -17,17 +17,6 @@ export interface PortfolioChartProps {
 const styles = stylex.create({
   root: { width: "100%", minWidth: 0, fontFamily: "inherit", color: "#35443e" },
   chart: { display: "block", width: "100%", height: "auto", overflow: "visible" },
-  legend: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 16,
-    listStyle: "none",
-    padding: 0,
-    margin: "12px 0 0",
-    fontSize: 12,
-  },
-  legendItem: { display: "flex", alignItems: "center", gap: 6 },
-  swatch: { width: 10, height: 10, borderRadius: 3, flexShrink: 0 },
   note: { margin: "10px 0 0", fontSize: 12, color: "#68776f", lineHeight: 1.5 },
 });
 
@@ -68,10 +57,10 @@ export function PortfolioChart(props: PortfolioChartProps) {
         onPointerMove={handlePointer}
         onPointerLeave={clearHover}
       >
-        <title id={`${id}-title`}>Valor del portafolio durante el último año</title>
+        <title id={`${id}-title`}>Valor del portafolio durante los últimos 3 meses</title>
         <desc id={`${id}-description`}>
-          Áreas apiladas por fondo y caja, de abajo hacia arriba en el orden de la leyenda. La zona
-          tenue anterior al inicio muestra una simulación de la distribución inicial.
+          Áreas apiladas por fondo y caja, de abajo hacia arriba en el orden de la lista de stocks.
+          La zona tenue anterior al inicio muestra una simulación de la distribución inicial.
         </desc>
         <defs>
           <clipPath id={`${id}-past`}>
@@ -200,21 +189,8 @@ export function PortfolioChart(props: PortfolioChartProps) {
           </text>
         </Show>
       </svg>
-      <ul {...stylex.attrs(styles.legend)} aria-label="Capas de abajo hacia arriba">
-        <For each={LAYERS}>
-          {(layer) => (
-            <li {...stylex.attrs(styles.legendItem)}>
-              <svg {...stylex.attrs(styles.swatch)} viewBox="0 0 10 10" aria-hidden="true">
-                <rect width="10" height="10" rx="3" fill={layer.color} />
-              </svg>
-              {layer.name}
-            </li>
-          )}
-        </For>
-      </ul>
       <p {...stylex.attrs(styles.note)}>
-        Último año · CLP · Fechas simuladas. Antes de «Inicio», la zona tenue supone que mantuviste
-        la distribución inicial.
+        Antes de «Inicio», la zona tenue supone que mantuviste la distribución inicial.
       </p>
     </section>
   );

@@ -7,7 +7,7 @@ export const livePrices = broadcast(async function* (): AsyncGenerator<PriceTick
   yield* watchPrices();
 });
 
-/** The last simulated year, one tick per day (365 points), oldest first. */
+/** The simulated history window, one tick per day, oldest first. */
 export async function getPriceHistory(): Promise<PriceTick[]> {
   "use server";
   return [...priceHistory()];

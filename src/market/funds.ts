@@ -85,12 +85,11 @@ export const INITIAL_CAPITAL_CLP = 250_000_000;
 /** Color of the cash layer. */
 export const CASH_COLOR = "#cfd4da";
 
-// Simulated clock: one tick per simulated day, every 6 real seconds
-// (4 simulated hours per real second).
+// Simulated clock: one tick per simulated day, every 2 real seconds.
 export const HOUR_MS = 3_600_000;
 export const DAY_MS = 24 * HOUR_MS;
 export const YEAR_MS = 365 * DAY_MS;
 export const SIM_MS_PER_TICK = DAY_MS;
-export const REAL_MS_PER_TICK = 6_000;
-/** Length of the price history the server keeps and the chart shows. */
-export const HISTORY_WINDOW_MS = YEAR_MS;
+export const REAL_MS_PER_TICK = 2_000;
+/** Length of the price history the server keeps and the chart shows (~3 months). */
+export const HISTORY_WINDOW_MS = 90 * DAY_MS;

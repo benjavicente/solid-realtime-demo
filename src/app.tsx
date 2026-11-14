@@ -11,9 +11,8 @@ import {
   getFund,
   INITIAL_CAPITAL_CLP,
   INITIAL_PLAN,
-  YEAR_MS,
+  HISTORY_WINDOW_MS,
   type FundId,
-  type RiskLevel,
 } from "./market/funds";
 import type { PriceTick } from "./market/types";
 import {
@@ -35,12 +34,6 @@ const percent = new Intl.NumberFormat("es-CL", {
   maximumFractionDigits: 1,
 });
 const simDate = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeZone: "UTC" });
-
-const RISK_LABEL: Record<RiskLevel, string> = {
-  high: "Riesgo alto",
-  medium: "Riesgo medio",
-  low: "Riesgo bajo",
-};
 
 const styles = stylex.create({
   page: {
@@ -98,7 +91,7 @@ const styles = stylex.create({
   },
   up: { color: "#2f7d55", fontSize: 13, fontWeight: 600 },
   down: { color: "#b4493f", fontSize: 13, fontWeight: 600 },
-  chartArea: { padding: 28, minWidth: 0 },
+  chartArea: { paddingBlock: 12, paddingInline: 28, minWidth: 0 },
   section: { marginTop: 28 },
   h2: { margin: "0 0 12px", fontSize: 18 },
   tableScroll: { overflowX: "auto" },
@@ -133,7 +126,6 @@ const styles = stylex.create({
   footer: { fontWeight: 600, borderBottomWidth: 0 },
   fund: { display: "flex", alignItems: "center", gap: 8 },
   swatch: { width: 10, height: 10, borderRadius: 3, flexShrink: 0 },
-  risk: { display: "block", color: "#6b7a72", fontSize: 11 },
   input: {
     width: 52,
     backgroundColor: "#fff",
@@ -210,7 +202,7 @@ function Dashboard() {
     const live = tick();
     const last = base[base.length - 1];
     if (last && live.t <= last.t) return base;
-    const start = live.t - YEAR_MS;
+    const start = live.t - HISTORY_WINDOW_MS;
     let first = 0;
     while (first < base.length && base[first].t < start) first++;
     return [...base.slice(first), live];
@@ -321,10 +313,7 @@ function Dashboard() {
                     <td {...stylex.attrs(styles.td, styles.left)}>
                       <span {...stylex.attrs(styles.fund)}>
                         <Swatch color={fund.color} />
-                        <span>
-                          {fund.name}
-                          <span {...stylex.attrs(styles.risk)}>{RISK_LABEL[fund.risk]}</span>
-                        </span>
+                        {fund.name}
                       </span>
                     </td>
                     <td {...stylex.attrs(styles.td)}>
@@ -361,10 +350,7 @@ function Dashboard() {
                 <td {...stylex.attrs(styles.td, styles.left)}>
                   <span {...stylex.attrs(styles.fund)}>
                     <Swatch color={CASH_COLOR} />
-                    <span>
-                      Caja
-                      <span {...stylex.attrs(styles.risk)}>Lo que no alcanza para una cuota</span>
-                    </span>
+                    Caja
                   </span>
                 </td>
                 <td {...stylex.attrs(styles.td, styles.muted)}>—</td>
@@ -453,7 +439,7 @@ function Dashboard() {
           <div {...stylex.attrs(styles.topInfo)}>
             <h1 {...stylex.attrs(styles.topTitle)}>Evolución del portafolio</h1>
             <p {...stylex.attrs(styles.clock)}>
-              {simDate.format(tick().t)} · día {day()} desde que llegaste · 1 día simulado cada 6 s
+              {simDate.format(tick().t)} · día {day()} desde que llegaste · 1 día simulado cada 2 s
               · mismos precios para todos
             </p>
           </div>

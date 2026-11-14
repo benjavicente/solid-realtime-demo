@@ -1,14 +1,14 @@
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { scaleUtc } from "@tanstack/charts/scales/time";
-import { CASH_COLOR, FUNDS, YEAR_MS } from "../../market/funds";
+import { CASH_COLOR, FUNDS, HISTORY_WINDOW_MS } from "../../market/funds";
 import type { PortfolioTimeline } from "../../portfolio";
 import type { SeriesPoint } from "./series";
 
-export const FRAME = { width: 960, height: 440, left: 88, right: 936, top: 48, bottom: 390 };
+export const FRAME = { width: 960, height: 560, left: 72, right: 940, top: 28, bottom: 524 };
 export const LAYERS = [...FUNDS, { id: "cash", name: "Caja", color: CASH_COLOR }];
 const monthFormat = new Intl.DateTimeFormat("es-CL", {
+  day: "numeric",
   month: "short",
-  year: "numeric",
   timeZone: "UTC",
 });
 const numberFormat = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 });
@@ -26,7 +26,7 @@ export function formatAxisMoney(value: number): string {
 
 export function buildGeometry(points: readonly SeriesPoint[], timeline: PortfolioTimeline) {
   const end = points[points.length - 1]?.t ?? timeline.startedAt;
-  const start = end - YEAR_MS;
+  const start = end - HISTORY_WINDOW_MS;
   // TanStack's standalone scales are SSR-safe. The four ordered layers use a
   // small SVG path builder, avoiding adapter / scene machinery for this demo.
   const x = scaleUtc([start, end], [FRAME.left, FRAME.right]);
@@ -63,7 +63,7 @@ export function buildGeometry(points: readonly SeriesPoint[], timeline: Portfoli
     totalPath,
     markers,
     split: Math.min(FRAME.right, Math.max(FRAME.left, positionX(timeline.startedAt))),
-    xTicks: x.ticks(6).map((date) => ({
+    xTicks: x.ticks(7).map((date) => ({
       x: positionX(date.getTime()),
       label: monthFormat.format(date).replaceAll(".", ""),
     })),

@@ -1,4 +1,4 @@
-import { FUND_IDS, FUNDS, YEAR_MS, type FundId } from "../../market/funds";
+import { FUND_IDS, FUNDS, HISTORY_WINDOW_MS, type FundId } from "../../market/funds";
 import type { PriceTick } from "../../market/types";
 import type { Portfolio, PortfolioTimeline } from "../../portfolio";
 
@@ -50,7 +50,7 @@ export function buildSeries(
   if (!ticks.length) return [];
   const limit = Number.isFinite(maxPoints) ? Math.max(2, Math.floor(maxPoints)) : 400;
   const end = ticks[ticks.length - 1].t;
-  const start = Math.max(end - YEAR_MS, ticks[0].t);
+  const start = Math.max(end - HISTORY_WINDOW_MS, ticks[0].t);
   const first = tickAt(ticks, start);
   const last = ticks[ticks.length - 1];
   if (start === end) return [valuePoint(last, timeline.at(end))];

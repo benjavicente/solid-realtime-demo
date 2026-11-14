@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DAY_MS, FUNDS, YEAR_MS } from "../../market/funds";
+import { DAY_MS, FUNDS, HISTORY_WINDOW_MS } from "../../market/funds";
 import type { PriceTick } from "../../market/types";
 import { Cash, Portfolio, PortfolioTimeline, Stock } from "../../portfolio";
 import { buildGeometry, formatAxisMoney, FRAME } from "./geometry";
@@ -46,13 +46,16 @@ describe("buildSeries", () => {
 
   it("interpolates the left boundary and preserves both sides of an off-tick rebalance", () => {
     const timeline = PortfolioTimeline.start(portfolio(2), 0).commit(portfolio(1, 10), 25);
-    const points = buildSeries([tick(0, 10), tick(100, 20), tick(YEAR_MS + 10, 30)], timeline);
+    const points = buildSeries(
+      [tick(0, 10), tick(100, 20), tick(HISTORY_WINDOW_MS + 10, 30)],
+      timeline,
+    );
     expect(points[0].t).toBe(10);
     expect(points[0].total).toBe(22);
     expect(points.filter((point) => point.t === 25).map((point) => point.total)).toEqual([
       25, 22.5,
     ]);
-    expect(points.at(-1)?.t).toBe(YEAR_MS + 10);
+    expect(points.at(-1)?.t).toBe(HISTORY_WINDOW_MS + 10);
   });
 
   it("keeps only the final commit when multiple rebalances share a timestamp", () => {
@@ -73,7 +76,7 @@ describe("buildSeries", () => {
     for (const limit of [2, 3, 4, 31, 400]) {
       const points = buildSeries(ticks, timeline, limit);
       expect(points.length).toBeLessThanOrEqual(limit);
-      expect(points[0].t).toBe(ticks.at(-1)!.t - YEAR_MS);
+      expect(points[0].t).toBe(ticks.at(-1)!.t - HISTORY_WINDOW_MS);
       expect(points.at(-1)?.t).toBe(ticks.at(-1)!.t);
       expect(points.every((point, i) => i === 0 || point.t >= points[i - 1].t)).toBe(true);
     }
@@ -82,10 +85,13 @@ describe("buildSeries", () => {
 
 describe("chart geometry", () => {
   it("keeps a fixed year domain and shows only markers within the window", () => {
-    const timeline = PortfolioTimeline.start(portfolio(2, 7), -YEAR_MS - 1)
+    const timeline = PortfolioTimeline.start(portfolio(2, 7), -HISTORY_WINDOW_MS - 1)
       .commit(portfolio(1, 17), -10)
       .commit(portfolio(0, 27), 0);
-    const geometry = buildGeometry(buildSeries([tick(-YEAR_MS), tick(0)], timeline), timeline);
+    const geometry = buildGeometry(
+      buildSeries([tick(-HISTORY_WINDOW_MS), tick(0)], timeline),
+      timeline,
+    );
     expect(geometry.split).toBe(FRAME.left);
     expect(geometry.markers.map((marker) => marker.label)).toEqual(["Rebalanceo", "Rebalanceo"]);
     expect(geometry.layers).toHaveLength(4);
