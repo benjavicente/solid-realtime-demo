@@ -107,7 +107,7 @@ const styles = stylex.create({
   },
   up: { color: "#2f7d55", fontSize: 13, fontWeight: 600 },
   down: { color: "#b4493f", fontSize: 13, fontWeight: 600 },
-  chartArea: { paddingBlock: 6, paddingInline: 28, minWidth: 0 },
+  chartArea: { paddingTop: 24, paddingBottom: 6, paddingInline: 8, minWidth: 0 },
   section: { marginTop: 28 },
   h2: { margin: "0 0 12px", fontSize: 18 },
   tableScroll: { overflowX: "auto" },
