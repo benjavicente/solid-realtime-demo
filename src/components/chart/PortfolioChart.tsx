@@ -1,9 +1,19 @@
 import * as stylex from "@stylexjs/stylex";
-import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
+import { createChartSpring } from "@tanstack/charts/spring";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  Show,
+  untrack,
+} from "solid-js";
+import { HISTORY_WINDOW_MS, REAL_MS_PER_TICK } from "../../market/funds";
 import type { MarketEvent, PriceTick } from "../../market/types";
 import type { PortfolioTimeline } from "../../portfolio";
 import { EVENT_COPY } from "../../market/events";
-import { buildGeometry, FRAME } from "./geometry";
+import { buildGeometry, FRAME, niceYMax } from "./geometry";
 import { buildSeries, type SeriesPoint } from "./series";
 
 export { buildSeries, type SeriesPoint } from "./series";
@@ -32,7 +42,52 @@ export function PortfolioChart(props: PortfolioChartProps) {
       for (const event of tick.events ?? []) byStart.set(`${event.kind}-${event.startedAt}`, event);
     return [...byStart.values()];
   });
-  const geometry = createMemo(() => buildGeometry(series(), props.timeline, events()));
+
+  // Smooth updates. The value axis eases to its new top with TanStack's
+  // framework-agnostic spring, and each new tick slides the plot left by one day
+  // over the tick interval, so data streams in from the right instead of jumping.
+  const targetYMax = createMemo(() => niceYMax(series()));
+  const [yMax, setYMax] = createSignal<number | undefined>(undefined);
+  const spring = createChartSpring({ stiffness: 120, damping: 22 });
+  let springFrame = 0;
+  createEffect(
+    () => targetYMax(),
+    (to) => {
+      cancelAnimationFrame(springFrame);
+      // Start from the value on screen; reading it must not re-run this effect.
+      const from = untrack(yMax);
+      if (from === undefined || reducedMotion()) {
+        springFrame = requestAnimationFrame(() => setYMax(to));
+        return;
+      }
+      const started = performance.now();
+      const step = (now: number) => {
+        const sample = spring.sample(now - started, { from, to });
+        setYMax(sample.value);
+        if (!sample.done) springFrame = requestAnimationFrame(step);
+      };
+      springFrame = requestAnimationFrame(step);
+      return () => cancelAnimationFrame(springFrame);
+    },
+  );
+  const geometry = createMemo(() =>
+    buildGeometry(series(), props.timeline, events(), yMax() ?? targetYMax()),
+  );
+
+  let slide: SVGGElement | undefined;
+  createEffect(
+    () => props.ticks[props.ticks.length - 1]?.t,
+    (t, previous) => {
+      if (!slide || t === undefined || previous === undefined || t <= previous) return;
+      // After a long pause (e.g. a background tab) just jump to the new state.
+      if (t - previous > 3 * DAY || reducedMotion()) return;
+      const dx = ((t - previous) / HISTORY_WINDOW_MS) * (FRAME.right - FRAME.left);
+      slide.animate([{ transform: `translateX(${dx}px)` }, { transform: "translateX(0)" }], {
+        duration: REAL_MS_PER_TICK,
+        easing: "linear",
+      });
+    },
+  );
   // Hovered sample, tracked by timestamp so it survives new ticks while the
   // pointer rests (as long as the sample is still in the window).
   const [hoveredT, setHoveredT] = createSignal<number | undefined>(undefined);
@@ -105,90 +160,99 @@ export function PortfolioChart(props: PortfolioChartProps) {
               </g>
             )}
           </For>
-          <For each={geometry().xTicks} keyed={false}>
-            {(tick) => (
-              <g>
-                <line
-                  x1={tick().x}
-                  x2={tick().x}
-                  y1={FRAME.bottom}
-                  y2={FRAME.bottom + 5}
-                  stroke="#bac5bd"
-                />
-                <text x={tick().x} y={FRAME.bottom + 25} text-anchor="middle">
-                  {tick().label}
-                </text>
-              </g>
-            )}
-          </For>
         </g>
-        <For each={["past", "live"]}>
-          {(period) => (
-            <g clip-path={`url(#${id}-${period})`} opacity={period === "past" ? 0.34 : 1}>
-              <For each={geometry().layers} keyed={false}>
-                {(layer) => (
-                  <path
-                    d={layer().path}
-                    fill={layer().color}
-                    stroke="#fff"
-                    stroke-width="1.5"
-                    stroke-linejoin="round"
-                  />
+        <clipPath id={`${id}-plot`}>
+          <rect x={FRAME.left} y={0} width={FRAME.right - FRAME.left} height={FRAME.height} />
+        </clipPath>
+        <g clip-path={`url(#${id}-plot)`}>
+          <g ref={(el: SVGGElement) => (slide = el)}>
+            <g font-size="12" fill="#68776f">
+              <For each={geometry().xTicks} keyed={false}>
+                {(tick) => (
+                  <g>
+                    <line
+                      x1={tick().x}
+                      x2={tick().x}
+                      y1={FRAME.bottom}
+                      y2={FRAME.bottom + 5}
+                      stroke="#bac5bd"
+                    />
+                    <text x={tick().x} y={FRAME.bottom + 25} text-anchor="middle">
+                      {tick().label}
+                    </text>
+                  </g>
                 )}
               </For>
-              <path
-                d={geometry().totalPath}
-                fill="none"
-                stroke="#556b60"
-                stroke-width="2"
-                stroke-linejoin="round"
-              />
             </g>
-          )}
-        </For>
-        <For each={geometry().bands} keyed={false}>
-          {(band) => (
-            <g pointer-events="none">
-              <title>{EVENT_COPY[band().kind].title}</title>
-              <rect
-                x={band().x}
-                y={FRAME.top}
-                width={band().width}
-                height={FRAME.bottom - FRAME.top}
-                fill="#1f4a3b"
-                fill-opacity="0.08"
-              />
-              <text x={band().x + 4} y={FRAME.top + 14} fill="#1f4a3b" font-size="11">
-                {EVENT_COPY[band().kind].icon}
-              </text>
-            </g>
-          )}
-        </For>
-        <For each={geometry().markers} keyed={false}>
-          {(marker, index) => (
-            <g>
-              <title>{marker().label}</title>
-              <line
-                x1={marker().x}
-                x2={marker().x}
-                y1={FRAME.top}
-                y2={FRAME.bottom}
-                stroke="#68776f"
-                stroke-width="1"
-                stroke-dasharray="4 5"
-              />
-              <text
-                x={marker().x > FRAME.right - 90 ? marker().x - 5 : marker().x + 5}
-                y={20 + (index % 2) * 16}
-                text-anchor={marker().x > FRAME.right - 90 ? "end" : "start"}
-                fill="#68776f"
-                font-size="11"
-              >
-                {marker().label}
-              </text>
-            </g>
-          )}
-        </For>
+            <For each={["past", "live"]}>
+              {(period) => (
+                <g clip-path={`url(#${id}-${period})`} opacity={period === "past" ? 0.34 : 1}>
+                  <For each={geometry().layers} keyed={false}>
+                    {(layer) => (
+                      <path
+                        d={layer().path}
+                        fill={layer().color}
+                        stroke="#fff"
+                        stroke-width="1.5"
+                        stroke-linejoin="round"
+                      />
+                    )}
+                  </For>
+                  <path
+                    d={geometry().totalPath}
+                    fill="none"
+                    stroke="#556b60"
+                    stroke-width="2"
+                    stroke-linejoin="round"
+                  />
+                </g>
+              )}
+            </For>
+            <For each={geometry().bands} keyed={false}>
+              {(band) => (
+                <g pointer-events="none">
+                  <title>{EVENT_COPY[band().kind].title}</title>
+                  <rect
+                    x={band().x}
+                    y={FRAME.top}
+                    width={band().width}
+                    height={FRAME.bottom - FRAME.top}
+                    fill="#1f4a3b"
+                    fill-opacity="0.08"
+                  />
+                  <text x={band().x + 4} y={FRAME.top + 14} fill="#1f4a3b" font-size="11">
+                    {EVENT_COPY[band().kind].icon}
+                  </text>
+                </g>
+              )}
+            </For>
+            <For each={geometry().markers} keyed={false}>
+              {(marker, index) => (
+                <g>
+                  <title>{marker().label}</title>
+                  <line
+                    x1={marker().x}
+                    x2={marker().x}
+                    y1={FRAME.top}
+                    y2={FRAME.bottom}
+                    stroke="#68776f"
+                    stroke-width="1"
+                    stroke-dasharray="4 5"
+                  />
+                  <text
+                    x={marker().x > FRAME.right - 90 ? marker().x - 5 : marker().x + 5}
+                    y={20 + (index % 2) * 16}
+                    text-anchor={marker().x > FRAME.right - 90 ? "end" : "start"}
+                    fill="#68776f"
+                    font-size="11"
+                  >
+                    {marker().label}
+                  </text>
+                </g>
+              )}
+            </For>
+          </g>
+        </g>
         <Show when={hovered()}>
           {(anchor) => (
             <g pointer-events="none">
@@ -231,3 +295,9 @@ export function PortfolioChart(props: PortfolioChartProps) {
 }
 
 export default PortfolioChart;
+
+const DAY = 24 * 60 * 60 * 1000;
+
+function reducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}

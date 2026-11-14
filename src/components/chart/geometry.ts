@@ -25,18 +25,28 @@ export function formatAxisMoney(value: number): string {
   return moneyFormat.format(value);
 }
 
+/** A rounded top for the value axis with some headroom above the highest total. */
+export function niceYMax(points: readonly SeriesPoint[]): number {
+  const max = points.reduce((value, point) => Math.max(value, point.total), 0);
+  const domain = scaleLinear([0, Math.max(1, max * 1.08)], [FRAME.bottom, FRAME.top])
+    .nice(5)
+    .domain();
+  return Number(domain[1]);
+}
+
 export function buildGeometry(
   points: readonly SeriesPoint[],
   timeline: PortfolioTimeline,
   events: readonly MarketEvent[] = [],
+  yMax?: number,
 ) {
   const end = points[points.length - 1]?.t ?? timeline.startedAt;
   const start = end - HISTORY_WINDOW_MS;
   // TanStack's standalone scales are SSR-safe. The four ordered layers use a
   // small SVG path builder, avoiding adapter / scene machinery for this demo.
   const x = scaleUtc([start, end], [FRAME.left, FRAME.right]);
-  const max = points.reduce((value, point) => Math.max(value, point.total), 0);
-  const y = scaleLinear([0, Math.max(1, max * 1.08)], [FRAME.bottom, FRAME.top]).nice(5);
+  // An animated top (see `niceYMax`) keeps the scale from jumping between ticks.
+  const y = scaleLinear([0, yMax ?? niceYMax(points)], [FRAME.bottom, FRAME.top]);
   const positionX = (t: number) => x(t)!;
   const positionY = (value: number) => y(value)!;
   const stacks = points.map((point) => {

@@ -1,5 +1,10 @@
 import { broadcast } from "@solidjs/web/server-functions";
-import type { MarketEvent, MarketEventKind, PriceTick } from "./types";
+import {
+  MARKET_EVENT_KINDS,
+  type MarketEvent,
+  type MarketEventKind,
+  type PriceTick,
+} from "./types";
 import { priceHistory, triggerMarketEvent, watchPrices } from "~/server/simulation";
 
 export const livePrices = broadcast(async function* (): AsyncGenerator<PriceTick> {
@@ -13,7 +18,7 @@ export async function getPriceHistory(): Promise<PriceTick[]> {
   return [...priceHistory()];
 }
 
-const EVENT_KINDS = new Set<string>(["send-spy", "send-moon", "send-retiro"]);
+const EVENT_KINDS = new Set<string>(MARKET_EVENT_KINDS);
 
 /**
  * Hidden market events (easter eggs). Every viewer sees the effect, since the
