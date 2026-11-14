@@ -41,8 +41,9 @@ export function deserializeTimeline(data: unknown): PortfolioTimeline | undefine
     const value = data as SerializedTimeline;
     if (value?.version !== 1 || !Array.isArray(value.entries) || !value.entries.length)
       return undefined;
+    const entries: SerializedTimeline["entries"] = value.entries;
     let timeline: PortfolioTimeline | undefined;
-    for (const entry of value.entries) {
+    for (const entry of entries) {
       const portfolio = new Portfolio({
         stocks: entry.stocks.map((stock) => new Stock(stock)),
         cash: new Cash(entry.cash),

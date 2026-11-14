@@ -4,7 +4,7 @@ import { CASH_COLOR, FUNDS, HISTORY_WINDOW_MS } from "../../market/funds";
 import type { PortfolioTimeline } from "../../portfolio";
 import type { SeriesPoint } from "./series";
 
-export const FRAME = { width: 960, height: 560, left: 72, right: 940, top: 28, bottom: 524 };
+export const FRAME = { width: 960, height: 680, left: 72, right: 940, top: 14, bottom: 652 };
 export const LAYERS = [...FUNDS, { id: "cash", name: "Caja", color: CASH_COLOR }];
 const monthFormat = new Intl.DateTimeFormat("es-CL", {
   day: "numeric",
