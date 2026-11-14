@@ -1,4 +1,4 @@
 {
-  "ignorePatterns": ["references/**", "dist/**", "pnpm-lock.yaml", ".cloudflare/**"],
+  "ignorePatterns": ["references/**", "dist/**", "pnpm-lock.yaml"],
   "printWidth": 100
 }
