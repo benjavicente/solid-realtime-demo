@@ -1,0 +1,14 @@
+packages:
+  - .
+permissions:
+  "@solidjs/diagnostics":
+    build: true
+    skills: true
+  "@solidjs/web":
+    build: true
+    skills: true
+  solid-js:
+    build: true
+    skills: true
+  workerd:
+    build: true
