@@ -1,28 +1,21 @@
 import * as stylex from "@stylexjs/stylex";
-import { createMemo, createUniqueId, For, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
 import type { PriceTick } from "../../market/types";
 import type { PortfolioTimeline } from "../../portfolio";
-import { buildGeometry, FRAME, LAYERS, moneyFormat } from "./geometry";
-import { buildSeries } from "./series";
+import { buildGeometry, FRAME, LAYERS } from "./geometry";
+import { buildSeries, type SeriesPoint } from "./series";
 
-export { buildSeries } from "./series";
+export { buildSeries, type SeriesPoint } from "./series";
 
 export interface PortfolioChartProps {
   readonly ticks: readonly PriceTick[];
   readonly timeline: PortfolioTimeline;
+  /** Called with the sample under the pointer, or `undefined` when it leaves. */
+  readonly onHover?: (point: SeriesPoint | undefined) => void;
 }
 
 const styles = stylex.create({
   root: { width: "100%", minWidth: 0, fontFamily: "inherit", color: "#35443e" },
-  header: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 12,
-    justifyContent: "space-between",
-    alignItems: "baseline",
-  },
-  heading: { margin: 0, fontSize: 18, fontWeight: 600 },
-  value: { fontSize: 24, fontVariantNumeric: "tabular-nums", fontWeight: 600 },
   chart: { display: "block", width: "100%", height: "auto", overflow: "visible" },
   legend: {
     display: "flex",
@@ -43,21 +36,37 @@ export function PortfolioChart(props: PortfolioChartProps) {
   const id = createUniqueId();
   const series = createMemo(() => buildSeries(props.ticks, props.timeline));
   const geometry = createMemo(() => buildGeometry(series(), props.timeline));
+  // Hovered sample, tracked by timestamp so it survives new ticks while the
+  // pointer rests (as long as the sample is still in the window).
+  const [hoveredT, setHoveredT] = createSignal<number | undefined>(undefined);
+  const hovered = createMemo(() => {
+    const t = hoveredT();
+    return t === undefined ? undefined : geometry().anchors.find((anchor) => anchor.point.t === t);
+  });
+  const handlePointer = (event: PointerEvent & { currentTarget: SVGSVGElement }) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * FRAME.width;
+    const anchors = geometry().anchors;
+    if (!anchors.length || x < FRAME.left - 8 || x > FRAME.right + 8) return clearHover();
+    let nearest = anchors[0];
+    for (const anchor of anchors)
+      if (Math.abs(anchor.x - x) < Math.abs(nearest.x - x)) nearest = anchor;
+    setHoveredT(nearest.point.t);
+    props.onHover?.(nearest.point);
+  };
+  const clearHover = () => {
+    setHoveredT(undefined);
+    props.onHover?.(undefined);
+  };
   return (
     <section {...stylex.attrs(styles.root)} aria-label="Evolución del portafolio">
-      <div {...stylex.attrs(styles.header)}>
-        <h2 {...stylex.attrs(styles.heading)}>Evolución del portafolio</h2>
-        <span {...stylex.attrs(styles.value)}>
-          {geometry().latestValue === undefined
-            ? "Sin datos"
-            : moneyFormat.format(geometry().latestValue!)}
-        </span>
-      </div>
       <svg
         {...stylex.attrs(styles.chart)}
         viewBox={`0 0 ${FRAME.width} ${FRAME.height}`}
         role="img"
         aria-labelledby={`${id}-title ${id}-description`}
+        onPointerMove={handlePointer}
+        onPointerLeave={clearHover}
       >
         <title id={`${id}-title`}>Valor del portafolio durante el último año</title>
         <desc id={`${id}-description`}>
@@ -157,6 +166,28 @@ export function PortfolioChart(props: PortfolioChartProps) {
             </g>
           )}
         </For>
+        <Show when={hovered()}>
+          {(anchor) => (
+            <g pointer-events="none">
+              <line
+                x1={anchor().x}
+                x2={anchor().x}
+                y1={FRAME.top}
+                y2={FRAME.bottom}
+                stroke="#35443e"
+                stroke-opacity="0.5"
+              />
+              <circle
+                cx={anchor().x}
+                cy={anchor().y}
+                r="4.5"
+                fill="#fff"
+                stroke="#35443e"
+                stroke-width="2"
+              />
+            </g>
+          )}
+        </Show>
         <Show when={!series().length}>
           <text
             x={(FRAME.left + FRAME.right) / 2}

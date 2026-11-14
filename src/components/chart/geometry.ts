@@ -69,5 +69,12 @@ export function buildGeometry(points: readonly SeriesPoint[], timeline: Portfoli
     })),
     yTicks: y.ticks(5).map((value) => ({ y: positionY(value), label: formatAxisMoney(value) })),
     latestValue: points[points.length - 1]?.total,
+    /** Screen position of every sample, for hover lookups. */
+    anchors: points.map((point, i) => ({
+      point,
+      x: positionX(point.t),
+      y: positionY(point.total),
+      index: i,
+    })),
   };
 }
