@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { createMemo, createSignal, createStore, For, Loading, onSettled, Show } from "solid-js";
 import "./app.css";
+import { AnimatedNumber } from "./components/AnimatedNumber";
 import { PortfolioChart, type SeriesPoint } from "./components/chart/PortfolioChart";
 import { getPriceHistory, livePrices } from "./market/api";
 import {
@@ -23,11 +24,6 @@ import {
   type TargetError,
 } from "./portfolio";
 
-const money = new Intl.NumberFormat("es-CL", {
-  style: "currency",
-  currency: "CLP",
-  maximumFractionDigits: 0,
-});
 const integer = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 const percent = new Intl.NumberFormat("es-CL", {
   minimumFractionDigits: 1,
@@ -143,9 +139,9 @@ const styles = stylex.create({
   muted: { color: "#6b7a72" },
   buy: { color: "#2f7d55", fontWeight: 600 },
   sell: { color: "#b4493f", fontWeight: 600 },
-  error: { color: "#b4493f", fontSize: 13, margin: "10px 0 0" },
+  error: { color: "#b4493f", fontSize: 13, lineHeight: "20px", minHeight: 20, margin: "10px 0 0" },
   hint: { color: "#6b7a72", fontSize: 13, margin: "10px 0 0", lineHeight: 1.5 },
-  actions: { display: "flex", gap: 12, alignItems: "center", marginTop: 16, flexWrap: "wrap" },
+  actions: { display: "flex", gap: 12, alignItems: "center", marginTop: 8, flexWrap: "wrap" },
   button: {
     paddingBlock: 10,
     paddingInline: 18,
@@ -319,11 +315,15 @@ function Dashboard() {
                     <td {...stylex.attrs(styles.td)}>
                       {integer.format(portfolio().shares(fund.id))}
                     </td>
-                    <td {...stylex.attrs(styles.td)}>{money.format(prices()[fund.id])}</td>
                     <td {...stylex.attrs(styles.td)}>
-                      {money.format(portfolio().shares(fund.id) * prices()[fund.id])}
+                      <Money value={prices()[fund.id]} />
                     </td>
-                    <td {...stylex.attrs(styles.td)}>{percent.format(allocation()[fund.id])} %</td>
+                    <td {...stylex.attrs(styles.td)}>
+                      <Money value={portfolio().shares(fund.id) * prices()[fund.id]} />
+                    </td>
+                    <td {...stylex.attrs(styles.td)}>
+                      <Percent value={allocation()[fund.id]} />
+                    </td>
                     <td {...stylex.attrs(styles.td)}>
                       <input
                         {...stylex.attrs(styles.input)}
@@ -355,24 +355,54 @@ function Dashboard() {
                 </td>
                 <td {...stylex.attrs(styles.td, styles.muted)}>—</td>
                 <td {...stylex.attrs(styles.td, styles.muted)}>—</td>
-                <td {...stylex.attrs(styles.td)}>{money.format(portfolio().cash.shares)}</td>
-                <td {...stylex.attrs(styles.td)}>{percent.format(allocation()[CASH_ID])} %</td>
+                <td {...stylex.attrs(styles.td)}>
+                  <Money value={portfolio().cash.shares} />
+                </td>
+                <td {...stylex.attrs(styles.td)}>
+                  <Percent value={allocation()[CASH_ID]} />
+                </td>
                 <td {...stylex.attrs(styles.td, styles.muted)}>0 %</td>
               </tr>
               <tr>
                 <td {...stylex.attrs(styles.td, styles.left, styles.footer)}>Total</td>
                 <td {...stylex.attrs(styles.td, styles.footer)} />
                 <td {...stylex.attrs(styles.td, styles.footer)} />
-                <td {...stylex.attrs(styles.td, styles.footer)}>{money.format(total())}</td>
+                <td {...stylex.attrs(styles.td, styles.footer)}>
+                  <Money value={total()} />
+                </td>
                 <td {...stylex.attrs(styles.td, styles.footer)}>100 %</td>
-                <td {...stylex.attrs(styles.td, styles.footer)}>{percent.format(targetSum())} %</td>
+                <td {...stylex.attrs(styles.td, styles.footer)}>
+                  <Percent value={targetSum()} />
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Show when={error()}>
-          {(value) => <p {...stylex.attrs(styles.error)}>{describeError(value())}</p>}
-        </Show>
+        {/* The message slot keeps its height so showing an error never shifts the UI. */}
+        <p {...stylex.attrs(styles.error)} role="status">
+          {error() ? describeError(error()!) : ""}
+        </p>
+        <div {...stylex.attrs(styles.actions)}>
+          <button
+            type="button"
+            {...stylex.attrs(styles.button)}
+            disabled={!plan() || plan()!.isEmpty}
+            onClick={rebalance}
+          >
+            Rebalancear
+          </button>
+          <button type="button" {...stylex.attrs(styles.secondary)} onClick={useCurrent}>
+            Usar % actual
+          </button>
+          <button type="button" {...stylex.attrs(styles.secondary)} onClick={resetTargets}>
+            Plan inicial
+          </button>
+          <span {...stylex.attrs(styles.muted)}>
+            {timeline().changes.length === 1
+              ? "1 rebalanceo"
+              : `${timeline().changes.length} rebalanceos`}
+          </span>
+        </div>
 
         <div {...stylex.attrs(styles.section)}>
           <h2 {...stylex.attrs(styles.h2)}>Cambios</h2>
@@ -410,27 +440,6 @@ function Dashboard() {
               </>
             )}
           </Show>
-          <div {...stylex.attrs(styles.actions)}>
-            <button
-              type="button"
-              {...stylex.attrs(styles.button)}
-              disabled={!plan() || plan()!.isEmpty}
-              onClick={rebalance}
-            >
-              Rebalancear
-            </button>
-            <button type="button" {...stylex.attrs(styles.secondary)} onClick={useCurrent}>
-              Usar % actual
-            </button>
-            <button type="button" {...stylex.attrs(styles.secondary)} onClick={resetTargets}>
-              Plan inicial
-            </button>
-            <span {...stylex.attrs(styles.muted)}>
-              {timeline().changes.length === 1
-                ? "1 rebalanceo"
-                : `${timeline().changes.length} rebalanceos`}
-            </span>
-          </div>
         </div>
       </aside>
 
@@ -439,8 +448,7 @@ function Dashboard() {
           <div {...stylex.attrs(styles.topInfo)}>
             <h1 {...stylex.attrs(styles.topTitle)}>Evolución del portafolio</h1>
             <p {...stylex.attrs(styles.clock)}>
-              {simDate.format(tick().t)} · día {day()} desde que llegaste · 1 día simulado cada 2 s
-              · mismos precios para todos
+              {simDate.format(tick().t)} · día {day()} desde que llegaste
             </p>
           </div>
           <div {...stylex.attrs(styles.valuation)} aria-live="polite">
@@ -449,9 +457,11 @@ function Dashboard() {
                 ? `Valorización al ${simDate.format(hovered()!.t)}`
                 : "Valorización actual"}
             </div>
-            <div {...stylex.attrs(styles.valuationAmount)}>{money.format(shownValue())}</div>
+            <div {...stylex.attrs(styles.valuationAmount)}>
+              <Money value={shownValue()} />
+            </div>
             <div {...(change() >= -0.05 ? stylex.attrs(styles.up) : stylex.attrs(styles.down))}>
-              {change() >= -0.05 ? "▲" : "▼"} {percent.format(Math.abs(change()))} % vs. capital
+              {change() >= -0.05 ? "▲" : "▼"} <Percent value={Math.abs(change())} /> vs. capital
               inicial
             </div>
           </div>
@@ -504,12 +514,14 @@ function DiffRow(props: { diff: StockDiff }) {
           : `${props.diff.deltaShares > 0 ? "+" : ""}${integer.format(props.diff.deltaShares)}`}
       </td>
       <td {...stylex.attrs(styles.td)}>
-        {isCash()
-          ? money.format(props.diff.price * props.diff.sharesAfter)
-          : money.format(Math.abs(props.diff.amount))}
+        {isCash() ? (
+          <Money value={props.diff.price * props.diff.sharesAfter} />
+        ) : (
+          <Money value={Math.abs(props.diff.amount)} />
+        )}
       </td>
       <td {...stylex.attrs(styles.td)}>
-        {percent.format(props.diff.resultingPercent)} %
+        <Percent value={props.diff.resultingPercent} />
         <span {...stylex.attrs(styles.muted)}> / {percent.format(props.diff.targetPercent)} %</span>
       </td>
     </tr>
@@ -533,4 +545,17 @@ function describeError(error: TargetError): string {
   return error.difference > 0
     ? `Los % objetivo suman ${percent.format(error.total)} %: faltan ${gap} % para llegar a 100 %.`
     : `Los % objetivo suman ${percent.format(error.total)} %: sobran ${gap} %.`;
+}
+
+const MONEY_FORMAT = { style: "currency", currency: "CLP", maximumFractionDigits: 0 } as const;
+const PERCENT_FORMAT = { minimumFractionDigits: 1, maximumFractionDigits: 1 } as const;
+
+/** CLP amount whose digits roll to each new value. */
+function Money(props: { value: number }) {
+  return <AnimatedNumber value={props.value} format={MONEY_FORMAT} />;
+}
+
+/** Percentage with one decimal, animated the same way. */
+function Percent(props: { value: number }) {
+  return <AnimatedNumber value={props.value} format={PERCENT_FORMAT} suffix=" %" />;
 }
